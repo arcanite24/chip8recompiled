@@ -162,6 +162,11 @@ int chip8_run(Chip8EntryPoint entry_point, const Chip8RunConfig* config) {
         return 1;
     }
     
+    /* Set max_frames for headless mode if specified */
+    if (config->max_frames > 0) {
+        chip8_headless_set_max_frames(ctx, config->max_frames);
+    }
+    
     /* Apply initial settings */
     if (g_platform->apply_settings) {
         g_platform->apply_settings(ctx, &settings);
