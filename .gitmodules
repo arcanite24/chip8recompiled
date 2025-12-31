@@ -1,0 +1,9 @@
+[submodule "external/imgui"]
+	path = external/imgui
+	url = https://github.com/ocornut/imgui.git
+[submodule "chip8Archive"]
+	path = chip8Archive
+	url = git@github.com:JohnEarnest/chip8Archive.git
+[submodule "roms"]
+	path = roms
+	url = git@github.com:kripod/chip8-roms.git
