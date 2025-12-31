@@ -82,6 +82,13 @@ struct Config {
      */
     bool quirk_jump_vx = false;
     
+    /**
+     * OR/AND/XOR reset VF to 0
+     * true  = VF = 0 after 8xy1/8xy2/8xy3 (original COSMAC VIP)
+     * false = VF unchanged (modern/SUPER-CHIP)
+     */
+    bool quirk_vf_reset = true;
+    
     /* === Function Overrides === */
     
     /** Manually specified function entry points */

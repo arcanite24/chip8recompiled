@@ -40,6 +40,7 @@ struct GeneratorOptions {
     bool quirk_shift_uses_vy = false;        // SHR/SHL use VY as source
     bool quirk_load_store_inc_i = true;      // FX55/FX65 increment I
     bool quirk_jump_uses_vx = false;         // BNNN uses VX instead of V0
+    bool quirk_vf_reset = true;              // OR/AND/XOR reset VF to 0 (original CHIP-8)
     
     // ROM embedding
     bool embed_rom_data = true;              // Embed ROM for sprite data

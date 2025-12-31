@@ -205,16 +205,25 @@ static std::string generate_instruction_code(const Instruction& instr,
         case InstructionType::OR_VX_VY:
             code << "ctx->V[0x" << std::hex << (int)instr.x << "] |= ctx->V[0x" 
                  << (int)instr.y << "];";
+            if (options.quirk_vf_reset) {
+                code << " ctx->V[0xF] = 0;";
+            }
             break;
             
         case InstructionType::AND_VX_VY:
             code << "ctx->V[0x" << std::hex << (int)instr.x << "] &= ctx->V[0x" 
                  << (int)instr.y << "];";
+            if (options.quirk_vf_reset) {
+                code << " ctx->V[0xF] = 0;";
+            }
             break;
             
         case InstructionType::XOR_VX_VY:
             code << "ctx->V[0x" << std::hex << (int)instr.x << "] ^= ctx->V[0x" 
                  << (int)instr.y << "];";
+            if (options.quirk_vf_reset) {
+                code << " ctx->V[0xF] = 0;";
+            }
             break;
             
         case InstructionType::ADD_VX_VY:

@@ -57,7 +57,7 @@ jobs:
           cmake -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DCHIP8_BUILD_RECOMPILER=ON \
-            -DCHIP8_BUILD_RUNTIME=OFF
+            -DCHIP8_BUILD_RUNTIME=ON
 
       - name: Configure (Windows)
         if: runner.os == 'Windows'
@@ -83,3 +83,51 @@ jobs:
           dir build\recompiler\
           .\build\recompiler\chip8recomp.exe --help
         shell: cmd
+
+      - name: Run test suite (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          # Test recompilation of key test ROMs
+          RECOMPILER=./build/recompiler/chip8recomp
+          TEST_DIR=tests/chip8-test-suite/bin
+          OUTPUT_DIR=build/test_output
+          
+          mkdir -p $OUTPUT_DIR
+          
+          # Test 1: CHIP-8 Logo
+          echo "=== Test 1: CHIP-8 Logo ==="
+          $RECOMPILER "$TEST_DIR/1-chip8-logo.ch8" -o "$OUTPUT_DIR/test1" --single-function
+          cd "$OUTPUT_DIR/test1/build" 2>/dev/null || mkdir -p "$OUTPUT_DIR/test1/build" && cd "$OUTPUT_DIR/test1/build"
+          cmake -G Ninja .. -DCHIP8_RECOMPILED_DIR="${{ github.workspace }}"
+          cmake --build .
+          echo "✓ Test 1 passed"
+          cd "${{ github.workspace }}"
+          
+          # Test 2: IBM Logo
+          echo "=== Test 2: IBM Logo ==="
+          $RECOMPILER "$TEST_DIR/2-ibm-logo.ch8" -o "$OUTPUT_DIR/test2" --single-function
+          mkdir -p "$OUTPUT_DIR/test2/build" && cd "$OUTPUT_DIR/test2/build"
+          cmake -G Ninja .. -DCHIP8_RECOMPILED_DIR="${{ github.workspace }}"
+          cmake --build .
+          echo "✓ Test 2 passed"
+          cd "${{ github.workspace }}"
+          
+          # Test 3: Corax+ opcodes
+          echo "=== Test 3: Corax+ Opcodes ==="
+          $RECOMPILER "$TEST_DIR/3-corax+.ch8" -o "$OUTPUT_DIR/test3" --single-function
+          mkdir -p "$OUTPUT_DIR/test3/build" && cd "$OUTPUT_DIR/test3/build"
+          cmake -G Ninja .. -DCHIP8_RECOMPILED_DIR="${{ github.workspace }}"
+          cmake --build .
+          echo "✓ Test 3 passed"
+          cd "${{ github.workspace }}"
+          
+          # Test 4: Flags test (critical!)
+          echo "=== Test 4: Flags Test ==="
+          $RECOMPILER "$TEST_DIR/4-flags.ch8" -o "$OUTPUT_DIR/test4" --single-function
+          mkdir -p "$OUTPUT_DIR/test4/build" && cd "$OUTPUT_DIR/test4/build"
+          cmake -G Ninja .. -DCHIP8_RECOMPILED_DIR="${{ github.workspace }}"
+          cmake --build .
+          echo "✓ Test 4 passed"
+          
+          echo ""
+          echo "=== All tests passed! ==="

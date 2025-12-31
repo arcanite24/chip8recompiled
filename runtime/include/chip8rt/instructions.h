@@ -25,11 +25,14 @@ extern "C" {
  * 
  * Vx = Vx + Vy
  * VF = 1 if overflow (result > 255), 0 otherwise
+ * 
+ * Note: When x == 0xF, the flag result must survive (not the math result).
+ * We save the sum first, then set VF last.
  */
 #define CHIP8_ADD_VX_VY(ctx, x, y) do { \
     uint16_t _sum = (uint16_t)(ctx)->V[(x)] + (uint16_t)(ctx)->V[(y)]; \
-    (ctx)->V[0xF] = (_sum > 255) ? 1 : 0; \
     (ctx)->V[(x)] = (uint8_t)(_sum & 0xFF); \
+    (ctx)->V[0xF] = (_sum > 255) ? 1 : 0; \
 } while(0)
 
 /**
@@ -37,10 +40,15 @@ extern "C" {
  * 
  * Vx = Vx - Vy
  * VF = 1 if Vx >= Vy (NOT borrow), 0 otherwise
+ * 
+ * Note: When x == 0xF, the flag result must survive.
+ * We save inputs first, compute result, then set VF last.
  */
 #define CHIP8_SUB_VX_VY(ctx, x, y) do { \
-    (ctx)->V[0xF] = ((ctx)->V[(x)] >= (ctx)->V[(y)]) ? 1 : 0; \
-    (ctx)->V[(x)] = (ctx)->V[(x)] - (ctx)->V[(y)]; \
+    uint8_t _vx = (ctx)->V[(x)]; \
+    uint8_t _vy = (ctx)->V[(y)]; \
+    (ctx)->V[(x)] = _vx - _vy; \
+    (ctx)->V[0xF] = (_vx >= _vy) ? 1 : 0; \
 } while(0)
 
 /**
@@ -48,10 +56,14 @@ extern "C" {
  * 
  * Vx = Vy - Vx
  * VF = 1 if Vy >= Vx (NOT borrow), 0 otherwise
+ * 
+ * Note: When x == 0xF, the flag result must survive.
  */
 #define CHIP8_SUBN_VX_VY(ctx, x, y) do { \
-    (ctx)->V[0xF] = ((ctx)->V[(y)] >= (ctx)->V[(x)]) ? 1 : 0; \
-    (ctx)->V[(x)] = (ctx)->V[(y)] - (ctx)->V[(x)]; \
+    uint8_t _vx = (ctx)->V[(x)]; \
+    uint8_t _vy = (ctx)->V[(y)]; \
+    (ctx)->V[(x)] = _vy - _vx; \
+    (ctx)->V[0xF] = (_vy >= _vx) ? 1 : 0; \
 } while(0)
 
 /**
@@ -62,10 +74,12 @@ extern "C" {
  * 
  * Note: Original CHIP-8 stored Vy >> 1 in Vx. Modern interpreters
  * just shift Vx. This uses modern behavior by default.
+ * When x == 0xF, the flag result must survive.
  */
 #define CHIP8_SHR_VX(ctx, x) do { \
-    (ctx)->V[0xF] = (ctx)->V[(x)] & 0x01; \
-    (ctx)->V[(x)] >>= 1; \
+    uint8_t _vx = (ctx)->V[(x)]; \
+    (ctx)->V[(x)] = _vx >> 1; \
+    (ctx)->V[0xF] = _vx & 0x01; \
 } while(0)
 
 /**
@@ -73,10 +87,13 @@ extern "C" {
  * 
  * VF = least significant bit of Vy
  * Vx = Vy >> 1
+ * 
+ * When x == 0xF, the flag result must survive.
  */
 #define CHIP8_SHR_VX_VY(ctx, x, y) do { \
-    (ctx)->V[0xF] = (ctx)->V[(y)] & 0x01; \
-    (ctx)->V[(x)] = (ctx)->V[(y)] >> 1; \
+    uint8_t _vy = (ctx)->V[(y)]; \
+    (ctx)->V[(x)] = _vy >> 1; \
+    (ctx)->V[0xF] = _vy & 0x01; \
 } while(0)
 
 /**
@@ -84,10 +101,13 @@ extern "C" {
  * 
  * VF = most significant bit of Vx before shift
  * Vx = Vx << 1
+ * 
+ * When x == 0xF, the flag result must survive.
  */
 #define CHIP8_SHL_VX(ctx, x) do { \
-    (ctx)->V[0xF] = ((ctx)->V[(x)] & 0x80) >> 7; \
-    (ctx)->V[(x)] <<= 1; \
+    uint8_t _vx = (ctx)->V[(x)]; \
+    (ctx)->V[(x)] = _vx << 1; \
+    (ctx)->V[0xF] = (_vx & 0x80) >> 7; \
 } while(0)
 
 /**
@@ -95,10 +115,13 @@ extern "C" {
  * 
  * VF = most significant bit of Vy
  * Vx = Vy << 1
+ * 
+ * When x == 0xF, the flag result must survive.
  */
 #define CHIP8_SHL_VX_VY(ctx, x, y) do { \
-    (ctx)->V[0xF] = ((ctx)->V[(y)] & 0x80) >> 7; \
-    (ctx)->V[(x)] = (ctx)->V[(y)] << 1; \
+    uint8_t _vy = (ctx)->V[(y)]; \
+    (ctx)->V[(x)] = _vy << 1; \
+    (ctx)->V[0xF] = (_vy & 0x80) >> 7; \
 } while(0)
 
 /* ============================================================================
