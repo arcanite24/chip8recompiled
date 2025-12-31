@@ -183,6 +183,25 @@ These ROMs failed to compile:
 
 ---
 
+## Accuracy Notes
+
+This recompiler implements fixes from the [CTR Errata](https://github.com/gulrak/cadmium/wiki/CTR-Errata) 
+(corrections to Cowgod's Technical Reference):
+
+- **VF Flag Ordering**: Math opcodes (8xy4-8xyE) set VF *after* writing to Vx, so VF survives when x=F
+- **Correct Borrow Check**: 8xy5/8xy7 use `>=` not `>` (subtracting equal values does not borrow)
+- **VF Reset Quirk**: Original CHIP-8 resets VF to 0 on 8xy1-8xy3 (OR/AND/XOR)
+- **Lower Nibble Masking**: Key instructions (Ex9E, ExA1) and font lookup (Fx29) mask Vx with 0xF
+- **Sprite Clipping**: Sprites are clipped at screen edges, not wrapped (origin is wrapped, drawing is clipped)
+- **Fx0A Key Release**: Wait for key *release*, not just key press
+
+**Compatibility Status:**
+- "Working" means the ROM compiles and runs
+- Visual correctness depends on the specific ROM's requirements and quirk settings
+- Use the `--verify` flag with the test suite for display comparison testing
+
+---
+
 ## ROM Sources
 
 - **Classic ROMs:** `roms/games/`, `roms/demos/`, `roms/programs/`

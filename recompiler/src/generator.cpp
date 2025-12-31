@@ -311,8 +311,9 @@ static std::string generate_instruction_code(const Instruction& instr,
             break;
             
         case InstructionType::LD_F_VX:
-            code << "ctx->I = CHIP8_FONT_START + ctx->V[0x" << std::hex 
-                 << (int)instr.x << "] * 5;";
+            /* Mask digit to lower nibble (0-F) as per CTR errata */
+            code << "ctx->I = CHIP8_FONT_START + (ctx->V[0x" << std::hex 
+                 << (int)instr.x << "] & 0xF) * 5;";
             break;
             
         case InstructionType::LD_B_VX:

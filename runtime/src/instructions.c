@@ -58,10 +58,8 @@ void chip8_draw_sprite(Chip8Context* ctx, uint8_t vx, uint8_t vy, uint8_t height
 }
 
 bool chip8_key_pressed(Chip8Context* ctx, uint8_t key) {
-    if (key > 0xF) {
-        return false;
-    }
-    return ctx->keys[key];
+    /* Mask to lower nibble as per original CHIP-8 behavior (CTR errata) */
+    return ctx->keys[key & 0xF];
 }
 
 void chip8_wait_key(Chip8Context* ctx, uint8_t reg) {
