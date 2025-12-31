@@ -235,6 +235,9 @@ typedef struct Chip8RunConfig {
     /** Size of embedded ROM data */
     size_t rom_size;
     
+    /** Maximum frames to run (0 = unlimited, for headless testing) */
+    int max_frames;
+    
 } Chip8RunConfig;
 
 /**
@@ -246,7 +249,8 @@ typedef struct Chip8RunConfig {
     .cpu_freq_hz = 700, \
     .debug = false, \
     .rom_data = NULL, \
-    .rom_size = 0 \
+    .rom_size = 0, \
+    .max_frames = 0 \
 }
 
 /**
@@ -272,6 +276,50 @@ int chip8_run(Chip8EntryPoint entry_point, const Chip8RunConfig* config);
  * @return Exit code (0 = success)
  */
 int chip8_run_simple(Chip8EntryPoint entry_point, const char* title);
+
+/* ============================================================================
+ * Headless Platform (for testing)
+ * ========================================================================== */
+
+/**
+ * @brief Get the headless platform backend
+ * 
+ * The headless platform runs without display or audio, suitable for
+ * automated testing and CI/CD.
+ */
+Chip8Platform* chip8_platform_headless(void);
+
+/**
+ * @brief Get the current CHIP-8 context
+ * 
+ * Useful for testing - access the context after chip8_run() returns.
+ */
+Chip8Context* chip8_get_context(void);
+
+/**
+ * @brief Set maximum frames to run in headless mode
+ */
+void chip8_headless_set_max_frames(Chip8Context* ctx, int max_frames);
+
+/**
+ * @brief Dump display to stdout as ASCII art
+ */
+void chip8_dump_display(Chip8Context* ctx);
+
+/**
+ * @brief Calculate a hash of the display buffer
+ */
+uint32_t chip8_display_hash(Chip8Context* ctx);
+
+/**
+ * @brief Dump display to PBM file
+ */
+bool chip8_dump_display_pbm(Chip8Context* ctx, const char* filename);
+
+/**
+ * @brief Compare display against reference PBM file
+ */
+bool chip8_compare_display_pbm(Chip8Context* ctx, const char* reference_file);
 
 #ifdef __cplusplus
 }

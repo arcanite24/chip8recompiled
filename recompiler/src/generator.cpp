@@ -680,7 +680,10 @@ std::string generate_main(const GeneratorOptions& options) {
     main << " */\n\n";
     
     main << "#include \"" << options.output_prefix << ".h\"\n";
-    main << "#include <chip8rt/platform.h>\n\n";
+    main << "#include <chip8rt/platform.h>\n";
+    main << "#include <stdlib.h>\n";
+    main << "#include <string.h>\n";
+    main << "#include <stdio.h>\n\n";
     
     if (options.embed_rom_data) {
         main << "/* Embedded ROM data (for sprites, etc.) */\n";
@@ -689,10 +692,33 @@ std::string generate_main(const GeneratorOptions& options) {
     }
     
     main << "int main(int argc, char* argv[]) {\n";
-    main << "    (void)argc; (void)argv;\n\n";
+    main << "    int headless_frames = 0;\n";
+    main << "    const char* dump_file = NULL;\n";
+    main << "    const char* compare_file = NULL;\n";
+    main << "    bool dump_display = false;\n";
+    main << "    bool dump_hash = false;\n\n";
     
-    main << "    /* Set up platform */\n";
-    main << "    chip8_set_platform(chip8_platform_sdl2());\n\n";
+    main << "    /* Parse command line arguments */\n";
+    main << "    for (int i = 1; i < argc; i++) {\n";
+    main << "        if (strcmp(argv[i], \"--headless\") == 0 && i + 1 < argc) {\n";
+    main << "            headless_frames = atoi(argv[++i]);\n";
+    main << "        } else if (strcmp(argv[i], \"--dump\") == 0) {\n";
+    main << "            dump_display = true;\n";
+    main << "        } else if (strcmp(argv[i], \"--hash\") == 0) {\n";
+    main << "            dump_hash = true;\n";
+    main << "        } else if (strcmp(argv[i], \"--dump-pbm\") == 0 && i + 1 < argc) {\n";
+    main << "            dump_file = argv[++i];\n";
+    main << "        } else if (strcmp(argv[i], \"--compare\") == 0 && i + 1 < argc) {\n";
+    main << "            compare_file = argv[++i];\n";
+    main << "        }\n";
+    main << "    }\n\n";
+    
+    main << "    /* Select platform based on mode */\n";
+    main << "    if (headless_frames > 0) {\n";
+    main << "        chip8_set_platform(chip8_platform_headless());\n";
+    main << "    } else {\n";
+    main << "        chip8_set_platform(chip8_platform_sdl2());\n";
+    main << "    }\n\n";
     
     main << "    /* Register recompiled functions */\n";
     main << "    " << options.output_prefix << "_register_functions();\n\n";
@@ -709,8 +735,37 @@ std::string generate_main(const GeneratorOptions& options) {
     }
     
     main << "\n";
+    main << "    if (headless_frames > 0) {\n";
+    main << "        config.max_frames = headless_frames;\n";
+    main << "    }\n\n";
+    
     main << "    /* Run the recompiled program */\n";
-    main << "    return chip8_run(" << options.output_prefix << "_entry, &config);\n";
+    main << "    int result = chip8_run(" << options.output_prefix << "_entry, &config);\n\n";
+    
+    main << "    /* Post-run actions for testing */\n";
+    main << "    if (headless_frames > 0) {\n";
+    main << "        Chip8Context* ctx = chip8_get_context();\n";
+    main << "        if (dump_display && ctx) {\n";
+    main << "            chip8_dump_display(ctx);\n";
+    main << "        }\n";
+    main << "        if (dump_hash && ctx) {\n";
+    main << "            printf(\"DISPLAY_HASH: %08x\\n\", chip8_display_hash(ctx));\n";
+    main << "        }\n";
+    main << "        if (dump_file && ctx) {\n";
+    main << "            chip8_dump_display_pbm(ctx, dump_file);\n";
+    main << "        }\n";
+    main << "        if (compare_file && ctx) {\n";
+    main << "            if (chip8_compare_display_pbm(ctx, compare_file)) {\n";
+    main << "                printf(\"DISPLAY_MATCH: PASS\\n\");\n";
+    main << "                return 0;\n";
+    main << "            } else {\n";
+    main << "                printf(\"DISPLAY_MATCH: FAIL\\n\");\n";
+    main << "                return 1;\n";
+    main << "            }\n";
+    main << "        }\n";
+    main << "    }\n\n";
+    
+    main << "    return result;\n";
     main << "}\n";
     
     return main.str();
@@ -758,6 +813,7 @@ std::string generate_cmake(const GeneratorOptions& options) {
     cmake << "    ${CHIP8_RECOMPILED_DIR}/runtime/src/instructions.c\n";
     cmake << "    ${CHIP8_RECOMPILED_DIR}/runtime/src/runtime.c\n";
     cmake << "    ${CHIP8_RECOMPILED_DIR}/runtime/src/platform_sdl.c\n";
+    cmake << "    ${CHIP8_RECOMPILED_DIR}/runtime/src/platform_headless.c\n";
     cmake << "    ${CHIP8_RECOMPILED_DIR}/runtime/src/font.c\n";
     cmake << "    ${CHIP8_RECOMPILED_DIR}/runtime/src/settings.c\n";
     cmake << "    ${CHIP8_RECOMPILED_DIR}/runtime/src/menu.c\n";

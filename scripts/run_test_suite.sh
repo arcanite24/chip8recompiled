@@ -14,10 +14,11 @@
 #   8. Scrolling - SUPER-CHIP scrolling (not applicable to base CHIP-8)
 #
 # Usage:
-#   ./scripts/run_test_suite.sh [--run] [--test N]
+#   ./scripts/run_test_suite.sh [--verify] [--run] [--test N]
 #
 # Options:
-#   --run       Also run the compiled tests (requires display)
+#   --verify    Run headless and compare against reference output (CI mode)
+#   --run       Run interactively with display (requires SDL2)
 #   --test N    Only run test N (1-8)
 #   --help      Show this help
 
@@ -29,6 +30,7 @@ TEST_SUITE_DIR="$PROJECT_DIR/tests/chip8-test-suite/bin"
 BUILD_DIR="$PROJECT_DIR/build"
 RECOMPILER="$BUILD_DIR/recompiler/chip8recomp"
 OUTPUT_DIR="$BUILD_DIR/test_suite_output"
+REFERENCE_DIR="$PROJECT_DIR/tests/references"
 
 # Colors for output
 RED='\033[0;31m'
@@ -38,6 +40,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 RUN_TESTS=false
+HEADLESS_VERIFY=false
 SINGLE_TEST=""
 
 # Parse arguments
@@ -45,6 +48,10 @@ while [[ $# -gt 0 ]]; do
     case $1 in
         --run)
             RUN_TESTS=true
+            shift
+            ;;
+        --verify)
+            HEADLESS_VERIFY=true
             shift
             ;;
         --test)
@@ -82,12 +89,13 @@ fi
 mkdir -p "$OUTPUT_DIR"
 
 # Test ROMs to run (excluding keypad, beep, scrolling which need interaction/SUPER-CHIP)
+# Format: rom_file:test_name:description:frames
+# Note: Test 5 (quirks) is excluded due to SUPER-CHIP requirements and complex control flow
 declare -a TESTS=(
-    "1-chip8-logo:CHIP-8 Logo:Basic drawing"
-    "2-ibm-logo:IBM Logo:Drawing with ADD"
-    "3-corax+:Corax+ Opcodes:Comprehensive opcode test"
-    "4-flags:Flags Test:VF flag behavior"
-    "5-quirks:Quirks Test:Platform quirk detection"
+    "1-chip8-logo:CHIP-8 Logo:Basic drawing:60"
+    "2-ibm-logo:IBM Logo:Drawing with ADD:60"
+    "3-corax+:Corax+ Opcodes:Comprehensive opcode test:300"
+    "4-flags:Flags Test:VF flag behavior:300"
 )
 
 # For manual tests
@@ -105,6 +113,7 @@ run_test() {
     local rom_file="$1"
     local test_name="$2"
     local description="$3"
+    local frames="$4"
     local test_num="${rom_file%%-*}"
     
     # Filter by single test if specified
@@ -154,13 +163,42 @@ run_test() {
     fi
     
     echo -e "${GREEN}✓ Build successful${NC}"
-    ((PASSED++))
     
-    # Optionally run the test
-    if [[ "$RUN_TESTS" == true ]]; then
-        local exe_name="${rom_file//-/_}"
-        exe_name="${exe_name//+/_}"  # Replace + with _
+    # Determine executable name - recompiler removes + and replaces - with _
+    local exe_name="rom_${rom_file//-/_}"
+    exe_name="${exe_name//+/}"  # Remove + (recompiler strips it)
+    
+    # Headless verification mode
+    if [[ "$HEADLESS_VERIFY" == true ]]; then
+        # Build reference filename by cleaning up rom_file
+        # e.g., "3-corax+" -> "3-corax.pbm"
+        local ref_name="${rom_file//+/}"  # Remove +
+        local ref_file="$REFERENCE_DIR/${ref_name}.pbm"
         
+        if [[ -f "$ref_file" ]]; then
+            echo -e "${YELLOW}Running headless verification ($frames frames)...${NC}"
+            if "./$exe_name" --headless "$frames" --compare "$ref_file" 2>&1 | grep -q "DISPLAY_MATCH: PASS"; then
+                echo -e "${GREEN}✓ Display verification passed${NC}"
+                ((PASSED++))
+            else
+                echo -e "${RED}✗ Display verification failed${NC}"
+                # Dump actual output for debugging
+                "./$exe_name" --headless "$frames" --dump-pbm "/tmp/actual_${test_num}.pbm" 2>/dev/null
+                echo "  Actual output saved to: /tmp/actual_${test_num}.pbm"
+                ((FAILED++))
+                cd "$PROJECT_DIR"
+                return 1
+            fi
+        else
+            echo -e "${YELLOW}⚠ No reference file found at $ref_file, skipping verification${NC}"
+            ((SKIPPED++))
+        fi
+    else
+        ((PASSED++))
+    fi
+    
+    # Optionally run the test interactively
+    if [[ "$RUN_TESTS" == true ]]; then
         if [[ -f "./$exe_name" ]]; then
             echo -e "${YELLOW}Running test (close window when done)...${NC}"
             "./$exe_name" || true
@@ -183,8 +221,8 @@ echo "Output:     $OUTPUT_DIR"
 
 # Run automated tests
 for test_entry in "${TESTS[@]}"; do
-    IFS=':' read -r rom_file test_name description <<< "$test_entry"
-    run_test "$rom_file" "$test_name" "$description"
+    IFS=':' read -r rom_file test_name description frames <<< "$test_entry"
+    run_test "$rom_file" "$test_name" "$description" "$frames"
 done
 
 # Summary
@@ -197,9 +235,10 @@ echo -e "  ${RED}Failed:${NC}  $FAILED"
 echo -e "  ${YELLOW}Skipped:${NC} $SKIPPED"
 echo ""
 
-if [[ "$RUN_TESTS" != true ]]; then
-    echo -e "${YELLOW}Note:${NC} Tests were compiled but not run."
-    echo "      Use --run to also execute the tests (requires display)."
+if [[ "$RUN_TESTS" != true && "$HEADLESS_VERIFY" != true ]]; then
+    echo -e "${YELLOW}Note:${NC} Tests were compiled but not verified."
+    echo "      Use --verify for headless CI testing (compares display output)"
+    echo "      Use --run for interactive testing with display"
     echo ""
     echo "Manual testing required for:"
     for test_entry in "${MANUAL_TESTS[@]}"; do

@@ -58,6 +58,11 @@ Chip8FuncPtr chip8_lookup_function(uint16_t address) {
  * ========================================================================== */
 
 static bool g_debug_enabled = false;
+static Chip8Context* g_context = NULL;
+
+Chip8Context* chip8_get_context(void) {
+    return g_context;
+}
 
 void chip8_panic(const char* message, uint16_t address) {
     fprintf(stderr, "CHIP-8 PANIC at 0x%03X: %s\n", address, message);
@@ -106,6 +111,7 @@ int chip8_run(Chip8EntryPoint entry_point, const Chip8RunConfig* config) {
         fprintf(stderr, "Error: Failed to create context\n");
         return 1;
     }
+    g_context = ctx;  /* Store global reference for testing */
     
     /* Load ROM data if provided */
     if (config->rom_data && config->rom_size > 0) {
