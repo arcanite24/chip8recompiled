@@ -42,9 +42,12 @@ Inspired by [N64Recomp](https://github.com/Mr-Wiseguy/N64Recomp), this project b
 ### Building
 
 ```bash
-# Clone the repository
-git clone https://github.com/yourusername/chip8-recompiled.git
-cd chip8-recompiled
+# Clone the repository with submodules
+git clone --recursive git@github.com:arcanite24/chip8recompiled.git
+cd chip8recompiled
+
+# If you already cloned without --recursive, initialize submodules:
+git submodule update --init --recursive
 
 # Build the toolchain
 mkdir build && cd build
