@@ -4,6 +4,8 @@
  */
 
 #include "recompiler/generator.h"
+#include <algorithm>
+#include <cctype>
 #include <sstream>
 #include <fstream>
 #include <iomanip>
