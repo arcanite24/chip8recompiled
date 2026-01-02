@@ -85,6 +85,98 @@ typedef enum Chip8Waveform {
  * CHIP-8 Quirks
  * ========================================================================== */
 
+/* ============================================================================
+ * Input/Keybinding Configuration
+ * ========================================================================== */
+
+/**
+ * @brief Maximum number of supported gamepads
+ */
+#define CHIP8_MAX_GAMEPADS 4
+
+/**
+ * @brief Keyboard scancode for key mapping (uses SDL scancodes)
+ */
+typedef int32_t Chip8Scancode;
+
+/**
+ * @brief Gamepad button types for mapping
+ */
+typedef enum Chip8GamepadButton {
+    CHIP8_GPAD_NONE = -1,
+    CHIP8_GPAD_A = 0,
+    CHIP8_GPAD_B,
+    CHIP8_GPAD_X,
+    CHIP8_GPAD_Y,
+    CHIP8_GPAD_BACK,
+    CHIP8_GPAD_GUIDE,
+    CHIP8_GPAD_START,
+    CHIP8_GPAD_LEFTSTICK,
+    CHIP8_GPAD_RIGHTSTICK,
+    CHIP8_GPAD_LEFTSHOULDER,
+    CHIP8_GPAD_RIGHTSHOULDER,
+    CHIP8_GPAD_DPAD_UP,
+    CHIP8_GPAD_DPAD_DOWN,
+    CHIP8_GPAD_DPAD_LEFT,
+    CHIP8_GPAD_DPAD_RIGHT,
+    CHIP8_GPAD_BUTTON_COUNT
+} Chip8GamepadButton;
+
+/**
+ * @brief Key binding for a single CHIP-8 key
+ * 
+ * Supports both keyboard and gamepad bindings.
+ */
+typedef struct Chip8KeyBinding {
+    /** Primary keyboard scancode (-1 if unbound) */
+    Chip8Scancode keyboard;
+    
+    /** Alternate keyboard scancode (-1 if unbound) */
+    Chip8Scancode keyboard_alt;
+    
+    /** Gamepad button (-1 if unbound) */
+    Chip8GamepadButton gamepad_button;
+} Chip8KeyBinding;
+
+/**
+ * @brief Input settings including key mappings and gamepad config
+ */
+typedef struct Chip8InputSettings {
+    /** Key bindings for each CHIP-8 key (0-F) */
+    Chip8KeyBinding bindings[16];
+    
+    /** Enable gamepad support */
+    bool gamepad_enabled;
+    
+    /** Active gamepad index (0-3) */
+    int active_gamepad;
+    
+    /** Gamepad deadzone for analog sticks (0.0 - 1.0) */
+    float analog_deadzone;
+    
+    /** Use left stick for directional input (keys 2,4,6,8) */
+    bool use_left_stick;
+    
+    /** Use D-pad for directional input */
+    bool use_dpad;
+    
+    /** Vibration feedback on key press */
+    bool vibration_enabled;
+    
+    /** Vibration intensity (0.0 - 1.0) */
+    float vibration_intensity;
+} Chip8InputSettings;
+
+/**
+ * @brief Gamepad info for display
+ */
+typedef struct Chip8GamepadInfo {
+    bool connected;
+    char name[128];
+    int player_index;
+    bool has_rumble;
+} Chip8GamepadInfo;
+
 /**
  * @brief CHIP-8 quirk flags for compatibility
  * 
@@ -191,6 +283,7 @@ typedef struct Chip8Settings {
     Chip8GraphicsSettings graphics;
     Chip8AudioSettings audio;
     Chip8GameplaySettings gameplay;
+    Chip8InputSettings input;
 } Chip8Settings;
 
 /* ============================================================================
@@ -282,6 +375,39 @@ const char* chip8_get_theme_name(Chip8ColorTheme theme);
  * @return Waveform name
  */
 const char* chip8_get_waveform_name(Chip8Waveform waveform);
+
+/**
+ * @brief Get default input bindings
+ * 
+ * Returns the standard keyboard mapping for CHIP-8.
+ * 
+ * @param input Input settings structure to initialize
+ */
+void chip8_input_settings_default(Chip8InputSettings* input);
+
+/**
+ * @brief Get the name of a keyboard scancode
+ * 
+ * @param scancode The scancode to get the name for
+ * @return Human-readable key name
+ */
+const char* chip8_get_scancode_name(Chip8Scancode scancode);
+
+/**
+ * @brief Get the name of a gamepad button
+ * 
+ * @param button The gamepad button
+ * @return Human-readable button name
+ */
+const char* chip8_get_gamepad_button_name(Chip8GamepadButton button);
+
+/**
+ * @brief Get the CHIP-8 key label (0-9, A-F)
+ * 
+ * @param key CHIP-8 key index (0-15)
+ * @return Single character label
+ */
+const char* chip8_get_key_label(int key);
 
 #ifdef __cplusplus
 }

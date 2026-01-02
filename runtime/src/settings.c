@@ -60,9 +60,86 @@ static const int g_window_size_scales[CHIP8_WINDOW_COUNT] = {
     1, 2, 5, 10, 15, 20, 10  /* Custom defaults to 10 */
 };
 
+/* Default keyboard scancodes for CHIP-8 keys (SDL scancodes) */
+/* CHIP-8:  1 2 3 C    Keyboard: 1 2 3 4  */
+/*          4 5 6 D              Q W E R  */
+/*          7 8 9 E              A S D F  */
+/*          A 0 B F              Z X C V  */
+static const int32_t g_default_key_scancodes[16] = {
+    27,  /* 0 -> X (SDL_SCANCODE_X) */
+    30,  /* 1 -> 1 (SDL_SCANCODE_1) */
+    31,  /* 2 -> 2 (SDL_SCANCODE_2) */
+    32,  /* 3 -> 3 (SDL_SCANCODE_3) */
+    20,  /* 4 -> Q (SDL_SCANCODE_Q) */
+    26,  /* 5 -> W (SDL_SCANCODE_W) */
+    8,   /* 6 -> E (SDL_SCANCODE_E) */
+    4,   /* 7 -> A (SDL_SCANCODE_A) */
+    22,  /* 8 -> S (SDL_SCANCODE_S) */
+    7,   /* 9 -> D (SDL_SCANCODE_D) */
+    29,  /* A -> Z (SDL_SCANCODE_Z) */
+    6,   /* B -> C (SDL_SCANCODE_C) */
+    33,  /* C -> 4 (SDL_SCANCODE_4) */
+    21,  /* D -> R (SDL_SCANCODE_R) */
+    9,   /* E -> F (SDL_SCANCODE_F) */
+    25   /* F -> V (SDL_SCANCODE_V) */
+};
+
+/* Default gamepad button mappings - common layout for grid games */
+static const Chip8GamepadButton g_default_gamepad_buttons[16] = {
+    CHIP8_GPAD_A,            /* 0 - Action button */
+    CHIP8_GPAD_NONE,         /* 1 */
+    CHIP8_GPAD_DPAD_UP,      /* 2 - Up */
+    CHIP8_GPAD_NONE,         /* 3 */
+    CHIP8_GPAD_DPAD_LEFT,    /* 4 - Left */
+    CHIP8_GPAD_B,            /* 5 - Secondary action */
+    CHIP8_GPAD_DPAD_RIGHT,   /* 6 - Right */
+    CHIP8_GPAD_NONE,         /* 7 */
+    CHIP8_GPAD_DPAD_DOWN,    /* 8 - Down */
+    CHIP8_GPAD_NONE,         /* 9 */
+    CHIP8_GPAD_X,            /* A */
+    CHIP8_GPAD_Y,            /* B */
+    CHIP8_GPAD_LEFTSHOULDER, /* C */
+    CHIP8_GPAD_RIGHTSHOULDER,/* D */
+    CHIP8_GPAD_START,        /* E */
+    CHIP8_GPAD_BACK          /* F */
+};
+
+static const char* g_gamepad_button_names[CHIP8_GPAD_BUTTON_COUNT] = {
+    "A", "B", "X", "Y",
+    "Back", "Guide", "Start",
+    "Left Stick", "Right Stick",
+    "Left Shoulder", "Right Shoulder",
+    "D-Pad Up", "D-Pad Down", "D-Pad Left", "D-Pad Right"
+};
+
+static const char* g_chip8_key_labels[16] = {
+    "0", "1", "2", "3", "4", "5", "6", "7",
+    "8", "9", "A", "B", "C", "D", "E", "F"
+};
+
 /* ============================================================================
  * Default Settings
  * ========================================================================== */
+
+void chip8_input_settings_default(Chip8InputSettings* input) {
+    if (!input) return;
+    
+    /* Initialize all bindings */
+    for (int i = 0; i < 16; i++) {
+        input->bindings[i].keyboard = g_default_key_scancodes[i];
+        input->bindings[i].keyboard_alt = -1;  /* No alternate binding */
+        input->bindings[i].gamepad_button = g_default_gamepad_buttons[i];
+    }
+    
+    /* Default gamepad settings */
+    input->gamepad_enabled = true;
+    input->active_gamepad = 0;
+    input->analog_deadzone = 0.25f;
+    input->use_left_stick = true;
+    input->use_dpad = true;
+    input->vibration_enabled = true;
+    input->vibration_intensity = 0.5f;
+}
 
 Chip8Settings chip8_settings_default(void) {
     Chip8Settings settings = {
@@ -96,8 +173,13 @@ Chip8Settings chip8_settings_default(void) {
                 .jump_uses_vx = false,
                 .display_wait = true
             }
-        }
+        },
+        .input = {0}
     };
+    
+    /* Initialize input settings with defaults */
+    chip8_input_settings_default(&settings.input);
+    
     return settings;
 }
 
@@ -327,6 +409,44 @@ bool chip8_settings_load(Chip8Settings* settings, const char* path) {
             } else if (strcmp(key, "display_wait") == 0) {
                 settings->gameplay.quirks.display_wait = parse_bool(value);
             }
+        } else if (strcmp(section, "input") == 0) {
+            /* Input settings */
+            if (strcmp(key, "gamepad_enabled") == 0) {
+                settings->input.gamepad_enabled = parse_bool(value);
+            } else if (strcmp(key, "active_gamepad") == 0) {
+                settings->input.active_gamepad = parse_int(value, 0, CHIP8_MAX_GAMEPADS - 1, 0);
+            } else if (strcmp(key, "analog_deadzone") == 0) {
+                settings->input.analog_deadzone = parse_float(value, 0.0f, 1.0f, 0.25f);
+            } else if (strcmp(key, "use_left_stick") == 0) {
+                settings->input.use_left_stick = parse_bool(value);
+            } else if (strcmp(key, "use_dpad") == 0) {
+                settings->input.use_dpad = parse_bool(value);
+            } else if (strcmp(key, "vibration_enabled") == 0) {
+                settings->input.vibration_enabled = parse_bool(value);
+            } else if (strcmp(key, "vibration_intensity") == 0) {
+                settings->input.vibration_intensity = parse_float(value, 0.0f, 1.0f, 0.5f);
+            }
+        } else if (strncmp(section, "keybind_", 8) == 0) {
+            /* Key binding for specific key: [keybind_0] through [keybind_F] */
+            int key_idx = -1;
+            char hex_char = section[8];
+            if (hex_char >= '0' && hex_char <= '9') {
+                key_idx = hex_char - '0';
+            } else if (hex_char >= 'A' && hex_char <= 'F') {
+                key_idx = 10 + (hex_char - 'A');
+            } else if (hex_char >= 'a' && hex_char <= 'f') {
+                key_idx = 10 + (hex_char - 'a');
+            }
+            
+            if (key_idx >= 0 && key_idx < 16) {
+                if (strcmp(key, "keyboard") == 0) {
+                    settings->input.bindings[key_idx].keyboard = parse_int(value, -1, 512, -1);
+                } else if (strcmp(key, "keyboard_alt") == 0) {
+                    settings->input.bindings[key_idx].keyboard_alt = parse_int(value, -1, 512, -1);
+                } else if (strcmp(key, "gamepad") == 0) {
+                    settings->input.bindings[key_idx].gamepad_button = (Chip8GamepadButton)parse_int(value, -1, CHIP8_GPAD_BUTTON_COUNT - 1, -1);
+                }
+            }
         }
     }
     
@@ -385,6 +505,30 @@ bool chip8_settings_save(const Chip8Settings* settings, const char* path) {
     fprintf(f, "sprite_wrap = %s\n", settings->gameplay.quirks.sprite_wrap ? "true" : "false");
     fprintf(f, "jump_uses_vx = %s\n", settings->gameplay.quirks.jump_uses_vx ? "true" : "false");
     fprintf(f, "display_wait = %s\n", settings->gameplay.quirks.display_wait ? "true" : "false");
+    fprintf(f, "\n");
+    
+    /* Input Settings */
+    fprintf(f, "[input]\n");
+    fprintf(f, "gamepad_enabled = %s\n", settings->input.gamepad_enabled ? "true" : "false");
+    fprintf(f, "active_gamepad = %d\n", settings->input.active_gamepad);
+    fprintf(f, "analog_deadzone = %.2f\n", settings->input.analog_deadzone);
+    fprintf(f, "use_left_stick = %s\n", settings->input.use_left_stick ? "true" : "false");
+    fprintf(f, "use_dpad = %s\n", settings->input.use_dpad ? "true" : "false");
+    fprintf(f, "vibration_enabled = %s\n", settings->input.vibration_enabled ? "true" : "false");
+    fprintf(f, "vibration_intensity = %.2f\n", settings->input.vibration_intensity);
+    fprintf(f, "\n");
+    
+    /* Key Bindings */
+    fprintf(f, "# Key bindings for each CHIP-8 key (0-F)\n");
+    fprintf(f, "# keyboard/keyboard_alt = SDL scancode, gamepad = button index\n");
+    for (int i = 0; i < 16; i++) {
+        const char* hex = "0123456789ABCDEF";
+        fprintf(f, "[keybind_%c]\n", hex[i]);
+        fprintf(f, "keyboard = %d\n", settings->input.bindings[i].keyboard);
+        fprintf(f, "keyboard_alt = %d\n", settings->input.bindings[i].keyboard_alt);
+        fprintf(f, "gamepad = %d\n", (int)settings->input.bindings[i].gamepad_button);
+        fprintf(f, "\n");
+    }
     
     fclose(f);
     return true;
@@ -520,4 +664,82 @@ const char* chip8_settings_get_rom_path(const char* rom_name) {
     /* Fallback to current directory */
     snprintf(path_buffer, sizeof(path_buffer), "%s_settings.ini", safe_name);
     return path_buffer;
+}
+
+/* ============================================================================
+ * Input Helper Functions
+ * ========================================================================== */
+
+const char* chip8_get_gamepad_button_name(Chip8GamepadButton button) {
+    if (button < 0 || button >= CHIP8_GPAD_BUTTON_COUNT) {
+        return "None";
+    }
+    return g_gamepad_button_names[button];
+}
+
+const char* chip8_get_key_label(int key) {
+    if (key < 0 || key >= 16) {
+        return "?";
+    }
+    return g_chip8_key_labels[key];
+}
+
+/* SDL scancode names - common keys for mapping */
+const char* chip8_get_scancode_name(Chip8Scancode scancode) {
+    /* This returns a descriptive name for common scancodes */
+    /* Note: In a real implementation, you'd use SDL_GetScancodeName */
+    /* but we provide fallback names for common keys */
+    static char buffer[32];
+    
+    switch (scancode) {
+        case -1: return "None";
+        case 4: return "A";
+        case 5: return "B";
+        case 6: return "C";
+        case 7: return "D";
+        case 8: return "E";
+        case 9: return "F";
+        case 10: return "G";
+        case 11: return "H";
+        case 12: return "I";
+        case 13: return "J";
+        case 14: return "K";
+        case 15: return "L";
+        case 16: return "M";
+        case 17: return "N";
+        case 18: return "O";
+        case 19: return "P";
+        case 20: return "Q";
+        case 21: return "R";
+        case 22: return "S";
+        case 23: return "T";
+        case 24: return "U";
+        case 25: return "V";
+        case 26: return "W";
+        case 27: return "X";
+        case 28: return "Y";
+        case 29: return "Z";
+        case 30: return "1";
+        case 31: return "2";
+        case 32: return "3";
+        case 33: return "4";
+        case 34: return "5";
+        case 35: return "6";
+        case 36: return "7";
+        case 37: return "8";
+        case 38: return "9";
+        case 39: return "0";
+        case 40: return "Return";
+        case 41: return "Escape";
+        case 42: return "Backspace";
+        case 43: return "Tab";
+        case 44: return "Space";
+        case 79: return "Right";
+        case 80: return "Left";
+        case 81: return "Down";
+        case 82: return "Up";
+        default:
+            snprintf(buffer, sizeof(buffer), "Key %d", scancode);
+            return buffer;
+    }
 }

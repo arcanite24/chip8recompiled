@@ -13,6 +13,19 @@
 #include <math.h>
 
 /* ============================================================================
+ * Gamepad State
+ * ========================================================================== */
+
+typedef struct {
+    SDL_GameController* controller;
+    SDL_JoystickID joystick_id;
+    char name[128];
+    bool connected;
+    bool has_rumble;
+    int player_index;
+} GamepadState;
+
+/* ============================================================================
  * Platform Data
  * ========================================================================== */
 
@@ -55,6 +68,26 @@ typedef struct {
     Chip8OverlayState overlay_state;
     bool overlay_enabled;
     Chip8Settings* settings_ref;  /* Reference to settings for overlay */
+    
+    /* Gamepad support */
+    GamepadState gamepads[CHIP8_MAX_GAMEPADS];
+    int active_gamepad_idx;
+    int gamepad_count;
+    bool gamepad_enabled;
+    float analog_deadzone;
+    bool use_left_stick;
+    bool use_dpad;
+    bool vibration_enabled;
+    float vibration_intensity;
+    
+    /* Input remapping state */
+    bool waiting_for_remap;      /* Currently waiting for key input */
+    int remap_target_key;        /* Which CHIP-8 key we're remapping */
+    bool remap_is_gamepad;       /* Are we remapping gamepad or keyboard? */
+    bool remap_is_alternate;     /* Are we setting the alternate key? */
+    
+    /* Configurable key bindings (copied from settings) */
+    Chip8KeyBinding key_bindings[16];
 } SDLPlatformData;
 
 /* Key repeat default settings (in microseconds) */
@@ -98,6 +131,251 @@ static const SDL_Scancode KEY_MAP[16] = {
     SDL_SCANCODE_F,    /* E */
     SDL_SCANCODE_V     /* F */
 };
+
+/* ============================================================================
+ * Gamepad Helper Functions
+ * ========================================================================== */
+
+/**
+ * @brief Convert SDL_GameControllerButton to Chip8GamepadButton
+ */
+static Chip8GamepadButton sdl_button_to_chip8(SDL_GameControllerButton button) {
+    switch (button) {
+        case SDL_CONTROLLER_BUTTON_A: return CHIP8_GPAD_A;
+        case SDL_CONTROLLER_BUTTON_B: return CHIP8_GPAD_B;
+        case SDL_CONTROLLER_BUTTON_X: return CHIP8_GPAD_X;
+        case SDL_CONTROLLER_BUTTON_Y: return CHIP8_GPAD_Y;
+        case SDL_CONTROLLER_BUTTON_BACK: return CHIP8_GPAD_BACK;
+        case SDL_CONTROLLER_BUTTON_GUIDE: return CHIP8_GPAD_GUIDE;
+        case SDL_CONTROLLER_BUTTON_START: return CHIP8_GPAD_START;
+        case SDL_CONTROLLER_BUTTON_LEFTSTICK: return CHIP8_GPAD_LEFTSTICK;
+        case SDL_CONTROLLER_BUTTON_RIGHTSTICK: return CHIP8_GPAD_RIGHTSTICK;
+        case SDL_CONTROLLER_BUTTON_LEFTSHOULDER: return CHIP8_GPAD_LEFTSHOULDER;
+        case SDL_CONTROLLER_BUTTON_RIGHTSHOULDER: return CHIP8_GPAD_RIGHTSHOULDER;
+        case SDL_CONTROLLER_BUTTON_DPAD_UP: return CHIP8_GPAD_DPAD_UP;
+        case SDL_CONTROLLER_BUTTON_DPAD_DOWN: return CHIP8_GPAD_DPAD_DOWN;
+        case SDL_CONTROLLER_BUTTON_DPAD_LEFT: return CHIP8_GPAD_DPAD_LEFT;
+        case SDL_CONTROLLER_BUTTON_DPAD_RIGHT: return CHIP8_GPAD_DPAD_RIGHT;
+        default: return CHIP8_GPAD_NONE;
+    }
+}
+
+/**
+ * @brief Convert Chip8GamepadButton to SDL_GameControllerButton
+ */
+static SDL_GameControllerButton chip8_button_to_sdl(Chip8GamepadButton button) {
+    switch (button) {
+        case CHIP8_GPAD_A: return SDL_CONTROLLER_BUTTON_A;
+        case CHIP8_GPAD_B: return SDL_CONTROLLER_BUTTON_B;
+        case CHIP8_GPAD_X: return SDL_CONTROLLER_BUTTON_X;
+        case CHIP8_GPAD_Y: return SDL_CONTROLLER_BUTTON_Y;
+        case CHIP8_GPAD_BACK: return SDL_CONTROLLER_BUTTON_BACK;
+        case CHIP8_GPAD_GUIDE: return SDL_CONTROLLER_BUTTON_GUIDE;
+        case CHIP8_GPAD_START: return SDL_CONTROLLER_BUTTON_START;
+        case CHIP8_GPAD_LEFTSTICK: return SDL_CONTROLLER_BUTTON_LEFTSTICK;
+        case CHIP8_GPAD_RIGHTSTICK: return SDL_CONTROLLER_BUTTON_RIGHTSTICK;
+        case CHIP8_GPAD_LEFTSHOULDER: return SDL_CONTROLLER_BUTTON_LEFTSHOULDER;
+        case CHIP8_GPAD_RIGHTSHOULDER: return SDL_CONTROLLER_BUTTON_RIGHTSHOULDER;
+        case CHIP8_GPAD_DPAD_UP: return SDL_CONTROLLER_BUTTON_DPAD_UP;
+        case CHIP8_GPAD_DPAD_DOWN: return SDL_CONTROLLER_BUTTON_DPAD_DOWN;
+        case CHIP8_GPAD_DPAD_LEFT: return SDL_CONTROLLER_BUTTON_DPAD_LEFT;
+        case CHIP8_GPAD_DPAD_RIGHT: return SDL_CONTROLLER_BUTTON_DPAD_RIGHT;
+        default: return SDL_CONTROLLER_BUTTON_INVALID;
+    }
+}
+
+/**
+ * @brief Initialize gamepad subsystem and detect connected controllers
+ */
+static void init_gamepads(SDLPlatformData* data) {
+    /* Initialize game controller subsystem */
+    if (SDL_InitSubSystem(SDL_INIT_GAMECONTROLLER) < 0) {
+        fprintf(stderr, "Warning: Failed to init game controller subsystem: %s\n", SDL_GetError());
+        return;
+    }
+    
+    /* Enable controller events */
+    SDL_GameControllerEventState(SDL_ENABLE);
+    
+    /* Default settings */
+    data->gamepad_enabled = true;
+    data->analog_deadzone = 0.25f;
+    data->use_left_stick = true;
+    data->use_dpad = true;
+    data->vibration_enabled = true;
+    data->vibration_intensity = 0.5f;
+    data->active_gamepad_idx = 0;
+    data->gamepad_count = 0;
+    
+    /* Initialize gamepad slots */
+    for (int i = 0; i < CHIP8_MAX_GAMEPADS; i++) {
+        data->gamepads[i].controller = NULL;
+        data->gamepads[i].connected = false;
+        data->gamepads[i].name[0] = '\0';
+    }
+    
+    /* Detect already connected controllers */
+    int num_joysticks = SDL_NumJoysticks();
+    printf("[Gamepad] Detected %d joystick(s)\n", num_joysticks);
+    
+    for (int i = 0; i < num_joysticks && data->gamepad_count < CHIP8_MAX_GAMEPADS; i++) {
+        if (SDL_IsGameController(i)) {
+            SDL_GameController* controller = SDL_GameControllerOpen(i);
+            if (controller) {
+                int slot = data->gamepad_count;
+                data->gamepads[slot].controller = controller;
+                data->gamepads[slot].joystick_id = SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(controller));
+                data->gamepads[slot].connected = true;
+                data->gamepads[slot].player_index = slot;
+                data->gamepads[slot].has_rumble = SDL_GameControllerHasRumble(controller);
+                
+                const char* name = SDL_GameControllerName(controller);
+                strncpy(data->gamepads[slot].name, name ? name : "Unknown Controller", 
+                        sizeof(data->gamepads[slot].name) - 1);
+                
+                printf("[Gamepad] Connected: %s (slot %d, rumble: %s)\n", 
+                       data->gamepads[slot].name, slot,
+                       data->gamepads[slot].has_rumble ? "yes" : "no");
+                
+                data->gamepad_count++;
+            }
+        }
+    }
+    
+    if (data->gamepad_count > 0) {
+        printf("[Gamepad] %d controller(s) ready\n", data->gamepad_count);
+    }
+}
+
+/**
+ * @brief Handle gamepad hotplug events
+ */
+static void handle_gamepad_added(SDLPlatformData* data, int device_index) {
+    if (!SDL_IsGameController(device_index)) return;
+    
+    /* Find empty slot */
+    int slot = -1;
+    for (int i = 0; i < CHIP8_MAX_GAMEPADS; i++) {
+        if (!data->gamepads[i].connected) {
+            slot = i;
+            break;
+        }
+    }
+    
+    if (slot < 0) {
+        printf("[Gamepad] No free slots for new controller\n");
+        return;
+    }
+    
+    SDL_GameController* controller = SDL_GameControllerOpen(device_index);
+    if (controller) {
+        data->gamepads[slot].controller = controller;
+        data->gamepads[slot].joystick_id = SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(controller));
+        data->gamepads[slot].connected = true;
+        data->gamepads[slot].player_index = slot;
+        data->gamepads[slot].has_rumble = SDL_GameControllerHasRumble(controller);
+        
+        const char* name = SDL_GameControllerName(controller);
+        strncpy(data->gamepads[slot].name, name ? name : "Unknown Controller",
+                sizeof(data->gamepads[slot].name) - 1);
+        
+        data->gamepad_count++;
+        
+        printf("[Gamepad] Added: %s (slot %d)\n", data->gamepads[slot].name, slot);
+    }
+}
+
+/**
+ * @brief Handle gamepad removal events
+ */
+static void handle_gamepad_removed(SDLPlatformData* data, SDL_JoystickID joystick_id) {
+    for (int i = 0; i < CHIP8_MAX_GAMEPADS; i++) {
+        if (data->gamepads[i].connected && data->gamepads[i].joystick_id == joystick_id) {
+            printf("[Gamepad] Removed: %s (slot %d)\n", data->gamepads[i].name, i);
+            
+            SDL_GameControllerClose(data->gamepads[i].controller);
+            data->gamepads[i].controller = NULL;
+            data->gamepads[i].connected = false;
+            data->gamepads[i].name[0] = '\0';
+            data->gamepad_count--;
+            
+            /* If active gamepad was removed, switch to first available */
+            if (data->active_gamepad_idx == i) {
+                data->active_gamepad_idx = 0;
+                for (int j = 0; j < CHIP8_MAX_GAMEPADS; j++) {
+                    if (data->gamepads[j].connected) {
+                        data->active_gamepad_idx = j;
+                        break;
+                    }
+                }
+            }
+            break;
+        }
+    }
+}
+
+/**
+ * @brief Trigger haptic feedback on the active gamepad
+ */
+static void gamepad_rumble(SDLPlatformData* data, float intensity, uint32_t duration_ms) {
+    if (!data->vibration_enabled || data->active_gamepad_idx < 0) return;
+    
+    GamepadState* gpad = &data->gamepads[data->active_gamepad_idx];
+    if (!gpad->connected || !gpad->has_rumble || !gpad->controller) return;
+    
+    uint16_t rumble_strength = (uint16_t)(intensity * data->vibration_intensity * 65535);
+    SDL_GameControllerRumble(gpad->controller, rumble_strength, rumble_strength, duration_ms);
+}
+
+/**
+ * @brief Check if a gamepad button is pressed
+ */
+static bool is_gamepad_button_pressed(SDLPlatformData* data, Chip8GamepadButton button) {
+    if (!data->gamepad_enabled || button == CHIP8_GPAD_NONE) return false;
+    
+    GamepadState* gpad = &data->gamepads[data->active_gamepad_idx];
+    if (!gpad->connected || !gpad->controller) return false;
+    
+    SDL_GameControllerButton sdl_button = chip8_button_to_sdl(button);
+    if (sdl_button == SDL_CONTROLLER_BUTTON_INVALID) return false;
+    
+    return SDL_GameControllerGetButton(gpad->controller, sdl_button) != 0;
+}
+
+/**
+ * @brief Get analog stick direction as D-pad equivalent
+ */
+static void get_analog_stick_direction(SDLPlatformData* data, bool* up, bool* down, bool* left, bool* right) {
+    *up = *down = *left = *right = false;
+    
+    if (!data->gamepad_enabled || !data->use_left_stick) return;
+    
+    GamepadState* gpad = &data->gamepads[data->active_gamepad_idx];
+    if (!gpad->connected || !gpad->controller) return;
+    
+    int16_t x = SDL_GameControllerGetAxis(gpad->controller, SDL_CONTROLLER_AXIS_LEFTX);
+    int16_t y = SDL_GameControllerGetAxis(gpad->controller, SDL_CONTROLLER_AXIS_LEFTY);
+    
+    float deadzone = data->analog_deadzone * 32767;
+    
+    if (x < -deadzone) *left = true;
+    if (x > deadzone) *right = true;
+    if (y < -deadzone) *up = true;
+    if (y > deadzone) *down = true;
+}
+
+/**
+ * @brief Shutdown gamepad subsystem
+ */
+static void shutdown_gamepads(SDLPlatformData* data) {
+    for (int i = 0; i < CHIP8_MAX_GAMEPADS; i++) {
+        if (data->gamepads[i].controller) {
+            SDL_GameControllerClose(data->gamepads[i].controller);
+            data->gamepads[i].controller = NULL;
+        }
+    }
+    SDL_QuitSubSystem(SDL_INIT_GAMECONTROLLER);
+}
 
 /* ============================================================================
  * Audio Callback
@@ -270,6 +548,14 @@ static bool sdl_init(Chip8Context* ctx, const char* title, int scale) {
     data->overlay_state.show_fps = true;  /* Show FPS by default */
     data->overlay_enabled = true;
     
+    /* Initialize gamepad support */
+    init_gamepads(data);
+    
+    /* Initialize default key bindings */
+    Chip8InputSettings default_input;
+    chip8_input_settings_default(&default_input);
+    memcpy(data->key_bindings, default_input.bindings, sizeof(data->key_bindings));
+    
     /* Set initial display to black */
     SDL_SetRenderDrawColor(data->renderer, 0, 0, 0, 255);
     SDL_RenderClear(data->renderer);
@@ -281,6 +567,9 @@ static bool sdl_init(Chip8Context* ctx, const char* title, int scale) {
 static void sdl_shutdown(Chip8Context* ctx) {
     SDLPlatformData* data = (SDLPlatformData*)ctx->platform_data;
     if (!data) return;
+    
+    /* Shutdown gamepads */
+    shutdown_gamepads(data);
     
     /* Shutdown ImGui */
     chip8_overlay_shutdown();
@@ -420,12 +709,47 @@ static void sdl_poll_events(Chip8Context* ctx) {
                 ctx->running = false;
                 break;
             
+            /* Handle gamepad hotplug */
+            case SDL_CONTROLLERDEVICEADDED:
+                handle_gamepad_added(data, event.cdevice.which);
+                break;
+            
+            case SDL_CONTROLLERDEVICEREMOVED:
+                handle_gamepad_removed(data, event.cdevice.which);
+                break;
+            
             case SDL_KEYDOWN:
                 if (event.key.repeat) break;  /* Ignore key repeats for special keys */
                 
+                /* Handle remapping mode - check overlay state */
+                if (data->overlay_state.waiting_for_input && !data->overlay_state.remap_is_gamepad) {
+                    /* Capture this key for remapping */
+                    int target = data->overlay_state.remap_target_key;
+                    if (target >= 0 && target < 16) {
+                        if (data->overlay_state.remap_is_alternate) {
+                            data->key_bindings[target].keyboard_alt = event.key.keysym.scancode;
+                        } else {
+                            data->key_bindings[target].keyboard = event.key.keysym.scancode;
+                        }
+                        /* Update settings if available */
+                        if (data->settings_ref) {
+                            data->settings_ref->input.bindings[target] = data->key_bindings[target];
+                            data->overlay_state.settings_changed = true;
+                        }
+                    }
+                    data->overlay_state.waiting_for_input = false;
+                    break;
+                }
+                
                 switch (event.key.keysym.scancode) {
                     case SDL_SCANCODE_ESCAPE:
-                        data->escape_pressed = true;
+                        if (data->overlay_state.waiting_for_input) {
+                            /* Cancel remapping */
+                            data->overlay_state.waiting_for_input = false;
+                        } else {
+                            /* Toggle ImGui settings (replaces old menu) */
+                            data->overlay_state.show_settings = !data->overlay_state.show_settings;
+                        }
                         break;
                     case SDL_SCANCODE_F1:
                         /* Toggle FPS display */
@@ -447,13 +771,35 @@ static void sdl_poll_events(Chip8Context* ctx) {
                         break;
                 }
                 break;
+            
+            case SDL_CONTROLLERBUTTONDOWN:
+                /* Handle gamepad remapping mode */
+                if (data->overlay_state.waiting_for_input && data->overlay_state.remap_is_gamepad) {
+                    int target = data->overlay_state.remap_target_key;
+                    if (target >= 0 && target < 16) {
+                        Chip8GamepadButton btn = sdl_button_to_chip8((SDL_GameControllerButton)event.cbutton.button);
+                        data->key_bindings[target].gamepad_button = btn;
+                        if (data->settings_ref) {
+                            data->settings_ref->input.bindings[target] = data->key_bindings[target];
+                            data->overlay_state.settings_changed = true;
+                        }
+                    }
+                    data->overlay_state.waiting_for_input = false;
+                }
+                break;
                 
             case SDL_KEYUP:
-                /* Handle key release for FX0A */
+                /* Handle key release for FX0A - check configured bindings */
                 for (int key = 0; key < 16; ++key) {
-                    if (event.key.keysym.scancode == KEY_MAP[key]) {
+                    SDL_Scancode scancode = event.key.keysym.scancode;
+                    Chip8KeyBinding* binding = &data->key_bindings[key];
+                    
+                    if ((int)scancode == binding->keyboard || 
+                        (int)scancode == binding->keyboard_alt) {
                         if (ctx->waiting_for_key) {
                             ctx->last_key_released = key;
+                            /* Trigger rumble feedback */
+                            gamepad_rumble(data, 0.3f, 50);
                         }
                         /* Reset repeat state on key release */
                         data->key_first_press[key] = true;
@@ -469,9 +815,38 @@ static void sdl_poll_events(Chip8Context* ctx) {
         ctx->keys_prev[key] = ctx->keys[key];
     }
     
+    /* Get analog stick directions for directional keys */
+    bool stick_up, stick_down, stick_left, stick_right;
+    get_analog_stick_direction(data, &stick_up, &stick_down, &stick_left, &stick_right);
+    
     /* Update key states with repeat rate limiting */
     for (int key = 0; key < 16; ++key) {
-        bool physical_pressed = keyboard[KEY_MAP[key]];
+        Chip8KeyBinding* binding = &data->key_bindings[key];
+        
+        /* Check keyboard bindings */
+        bool physical_pressed = false;
+        if (binding->keyboard >= 0 && keyboard[binding->keyboard]) {
+            physical_pressed = true;
+        }
+        if (!physical_pressed && binding->keyboard_alt >= 0 && keyboard[binding->keyboard_alt]) {
+            physical_pressed = true;
+        }
+        
+        /* Check gamepad button binding */
+        if (!physical_pressed && data->gamepad_enabled && binding->gamepad_button != CHIP8_GPAD_NONE) {
+            physical_pressed = is_gamepad_button_pressed(data, binding->gamepad_button);
+        }
+        
+        /* Handle analog stick as directional input (keys 2,4,6,8 = up,left,right,down) */
+        if (!physical_pressed && data->gamepad_enabled && data->use_left_stick) {
+            switch (key) {
+                case 2: physical_pressed = stick_up; break;      /* Up */
+                case 4: physical_pressed = stick_left; break;    /* Left */
+                case 6: physical_pressed = stick_right; break;   /* Right */
+                case 8: physical_pressed = stick_down; break;    /* Down */
+                default: break;
+            }
+        }
         
         if (physical_pressed) {
             if (data->key_first_press[key]) {
@@ -479,11 +854,16 @@ static void sdl_poll_events(Chip8Context* ctx) {
                 ctx->keys[key] = true;
                 data->key_first_press[key] = false;
                 data->key_repeat_time[key] = now;
+                
+                /* Optional: haptic feedback on first press */
+                if (data->vibration_enabled && data->gamepad_enabled) {
+                    gamepad_rumble(data, 0.2f, 30);
+                }
             } else {
                 /* Check if enough time has passed for repeat */
                 uint64_t elapsed = now - data->key_repeat_time[key];
                 uint64_t delay = (data->key_repeat_time[key] == 0) ? 
-                                 KEY_REPEAT_DELAY_US : KEY_REPEAT_RATE_US;
+                                 data->key_repeat_delay_us : data->key_repeat_rate_us;
                 
                 if (elapsed >= delay) {
                     ctx->keys[key] = true;
@@ -910,6 +1290,16 @@ static void sdl_apply_settings(Chip8Context* ctx, void* settings_ptr) {
     data->pixel_grid = settings->graphics.pixel_grid;
     data->crt_effect = settings->graphics.crt_effect;
     data->scanline_intensity = settings->graphics.scanline_intensity;
+    
+    /* Apply input settings */
+    memcpy(data->key_bindings, settings->input.bindings, sizeof(data->key_bindings));
+    data->gamepad_enabled = settings->input.gamepad_enabled;
+    data->active_gamepad_idx = settings->input.active_gamepad;
+    data->analog_deadzone = settings->input.analog_deadzone;
+    data->use_left_stick = settings->input.use_left_stick;
+    data->use_dpad = settings->input.use_dpad;
+    data->vibration_enabled = settings->input.vibration_enabled;
+    data->vibration_intensity = settings->input.vibration_intensity;
     
     /* Store settings reference for ImGui overlay */
     data->settings_ref = settings;

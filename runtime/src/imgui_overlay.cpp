@@ -16,6 +16,22 @@
 #include <cstring>
 
 /* ============================================================================
+ * Helper Functions for SDL Integration
+ * ========================================================================== */
+
+/**
+ * @brief Get SDL scancode name (more accurate than the C fallback)
+ */
+static const char* get_sdl_scancode_name(int scancode) {
+    if (scancode < 0) return "None";
+    const char* name = SDL_GetScancodeName((SDL_Scancode)scancode);
+    if (name && name[0] != '\0') {
+        return name;
+    }
+    return chip8_get_scancode_name(scancode);
+}
+
+/* ============================================================================
  * Initialization / Shutdown
  * ========================================================================== */
 
@@ -459,6 +475,189 @@ static void render_settings_window(Chip8Settings* settings, Chip8OverlayState* s
             if (ImGui::Checkbox("Memory ops increment I", &quirks)) {
                 settings->gameplay.quirks.memory_increment_i = quirks;
                 changed = true;
+            }
+        }
+        
+        if (ImGui::CollapsingHeader("Controls")) {
+            ImGui::TextColored(ImVec4(0.7f, 0.9f, 0.7f, 1.0f), "Keyboard Mappings");
+            ImGui::Separator();
+            
+            /* CHIP-8 keypad layout visual */
+            ImGui::Text("CHIP-8 Keypad Layout:");
+            ImGui::TextDisabled(" 1 2 3 C");
+            ImGui::TextDisabled(" 4 5 6 D");
+            ImGui::TextDisabled(" 7 8 9 E");
+            ImGui::TextDisabled(" A 0 B F");
+            ImGui::Spacing();
+            
+            /* Key bindings table */
+            if (ImGui::BeginTable("KeyBindings", 4, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
+                ImGui::TableSetupColumn("Key", ImGuiTableColumnFlags_WidthFixed, 40.0f);
+                ImGui::TableSetupColumn("Primary", ImGuiTableColumnFlags_WidthStretch);
+                ImGui::TableSetupColumn("Alternate", ImGuiTableColumnFlags_WidthStretch);
+                ImGui::TableSetupColumn("Gamepad", ImGuiTableColumnFlags_WidthStretch);
+                ImGui::TableHeadersRow();
+                
+                for (int i = 0; i < 16; i++) {
+                    ImGui::TableNextRow();
+                    
+                    /* Key label */
+                    ImGui::TableSetColumnIndex(0);
+                    ImGui::Text("%s", chip8_get_key_label(i));
+                    
+                    /* Primary keyboard binding */
+                    ImGui::TableSetColumnIndex(1);
+                    char btn_label[64];
+                    const char* key_name = get_sdl_scancode_name(settings->input.bindings[i].keyboard);
+                    snprintf(btn_label, sizeof(btn_label), "%s##kb%d", key_name, i);
+                    if (ImGui::Button(btn_label, ImVec2(-1, 0))) {
+                        state->remap_target_key = i;
+                        state->remap_is_gamepad = false;
+                        state->remap_is_alternate = false;
+                        state->waiting_for_input = true;
+                    }
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip("Click and press a key to remap");
+                    }
+                    
+                    /* Alternate keyboard binding */
+                    ImGui::TableSetColumnIndex(2);
+                    const char* alt_name = get_sdl_scancode_name(settings->input.bindings[i].keyboard_alt);
+                    snprintf(btn_label, sizeof(btn_label), "%s##kbalt%d", alt_name, i);
+                    if (ImGui::Button(btn_label, ImVec2(-1, 0))) {
+                        state->remap_target_key = i;
+                        state->remap_is_gamepad = false;
+                        state->remap_is_alternate = true;
+                        state->waiting_for_input = true;
+                    }
+                    
+                    /* Gamepad binding */
+                    ImGui::TableSetColumnIndex(3);
+                    const char* gpad_name = chip8_get_gamepad_button_name(settings->input.bindings[i].gamepad_button);
+                    snprintf(btn_label, sizeof(btn_label), "%s##gp%d", gpad_name, i);
+                    if (ImGui::Button(btn_label, ImVec2(-1, 0))) {
+                        state->remap_target_key = i;
+                        state->remap_is_gamepad = true;
+                        state->remap_is_alternate = false;
+                        state->waiting_for_input = true;
+                    }
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip("Click and press a gamepad button");
+                    }
+                }
+                ImGui::EndTable();
+            }
+            
+            /* Waiting for input indicator */
+            if (state->waiting_for_input) {
+                ImGui::Spacing();
+                ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), 
+                    "Press a %s for key %s (ESC to cancel)...",
+                    state->remap_is_gamepad ? "gamepad button" : "keyboard key",
+                    chip8_get_key_label(state->remap_target_key));
+            }
+            
+            ImGui::Spacing();
+            if (ImGui::Button("Reset to Defaults##keys")) {
+                chip8_input_settings_default(&settings->input);
+                changed = true;
+            }
+            
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::TextColored(ImVec4(0.7f, 0.9f, 0.7f, 1.0f), "Gamepad Settings");
+            ImGui::Separator();
+            
+            /* Show connected controllers info */
+            int num_joysticks = SDL_NumJoysticks();
+            int num_controllers = 0;
+            for (int i = 0; i < num_joysticks; i++) {
+                if (SDL_IsGameController(i)) num_controllers++;
+            }
+            
+            if (num_controllers > 0) {
+                ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "%d Controller(s) Detected", num_controllers);
+                for (int i = 0; i < num_joysticks && i < CHIP8_MAX_GAMEPADS; i++) {
+                    if (SDL_IsGameController(i)) {
+                        SDL_GameController* gc = SDL_GameControllerOpen(i);
+                        if (gc) {
+                            const char* name = SDL_GameControllerName(gc);
+                            bool has_rumble = SDL_GameControllerHasRumble(gc);
+                            ImGui::BulletText("%s %s", name ? name : "Unknown", 
+                                            has_rumble ? "(Rumble)" : "");
+                            SDL_GameControllerClose(gc);
+                        }
+                    }
+                }
+            } else {
+                ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.4f, 1.0f), "No Controllers Detected");
+                ImGui::TextDisabled("Connect a controller and it will be detected automatically");
+            }
+            
+            ImGui::Spacing();
+            
+            bool gamepad_enabled = settings->input.gamepad_enabled;
+            if (ImGui::Checkbox("Enable Gamepad", &gamepad_enabled)) {
+                settings->input.gamepad_enabled = gamepad_enabled;
+                changed = true;
+            }
+            
+            if (settings->input.gamepad_enabled) {
+                /* Active gamepad selector */
+                char active_label[128];
+                snprintf(active_label, sizeof(active_label), "Controller %d", 
+                        settings->input.active_gamepad + 1);
+                if (ImGui::BeginCombo("Active Controller", active_label)) {
+                    for (int i = 0; i < CHIP8_MAX_GAMEPADS; i++) {
+                        char label[64];
+                        snprintf(label, sizeof(label), "Controller %d", i + 1);
+                        bool selected = (settings->input.active_gamepad == i);
+                        if (ImGui::Selectable(label, selected)) {
+                            settings->input.active_gamepad = i;
+                            changed = true;
+                        }
+                    }
+                    ImGui::EndCombo();
+                }
+                
+                float deadzone = settings->input.analog_deadzone * 100.0f;
+                if (ImGui::SliderFloat("Analog Deadzone", &deadzone, 0.0f, 50.0f, "%.0f%%")) {
+                    settings->input.analog_deadzone = deadzone / 100.0f;
+                    changed = true;
+                }
+                
+                bool use_stick = settings->input.use_left_stick;
+                if (ImGui::Checkbox("Use Left Stick for Direction", &use_stick)) {
+                    settings->input.use_left_stick = use_stick;
+                    changed = true;
+                }
+                
+                bool use_dpad = settings->input.use_dpad;
+                if (ImGui::Checkbox("Use D-Pad for Direction", &use_dpad)) {
+                    settings->input.use_dpad = use_dpad;
+                    changed = true;
+                }
+                
+                ImGui::Separator();
+                
+                bool vibration = settings->input.vibration_enabled;
+                if (ImGui::Checkbox("Vibration Feedback", &vibration)) {
+                    settings->input.vibration_enabled = vibration;
+                    changed = true;
+                }
+                
+                if (settings->input.vibration_enabled) {
+                    float vib_intensity = settings->input.vibration_intensity * 100.0f;
+                    if (ImGui::SliderFloat("Vibration Intensity", &vib_intensity, 0.0f, 100.0f, "%.0f%%")) {
+                        settings->input.vibration_intensity = vib_intensity / 100.0f;
+                        changed = true;
+                    }
+                    
+                    if (ImGui::Button("Test Vibration")) {
+                        /* This will be handled by the platform layer */
+                        state->settings_changed = true;
+                    }
+                }
             }
         }
         

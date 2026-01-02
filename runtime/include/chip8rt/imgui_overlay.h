@@ -33,6 +33,13 @@ typedef struct Chip8OverlayState {
     /* Settings change tracking */
     bool settings_changed;   /* Set when ImGui modifies settings */
     
+    /* Input remapping state */
+    bool show_input_remap;   /* Show input remapping window */
+    int remap_target_key;    /* Which CHIP-8 key (-1 if none) */
+    bool remap_is_gamepad;   /* Are we remapping gamepad? */
+    bool remap_is_alternate; /* Remapping alternate key? */
+    bool waiting_for_input;  /* Waiting for user to press a key */
+    
     /* FPS tracking */
     float fps;
     float frame_time_ms;
