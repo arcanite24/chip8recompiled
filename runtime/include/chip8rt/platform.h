@@ -245,7 +245,7 @@ typedef struct Chip8RunConfig {
  */
 #define CHIP8_RUN_CONFIG_DEFAULT { \
     .title = "CHIP-8", \
-    .scale = 10, \
+    .scale = 20, \
     .cpu_freq_hz = 700, \
     .debug = false, \
     .rom_data = NULL, \

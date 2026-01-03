@@ -33,6 +33,11 @@ typedef struct Chip8OverlayState {
     /* Settings change tracking */
     bool settings_changed;   /* Set when ImGui modifies settings */
     
+    /* Menu action requests */
+    bool back_to_menu_requested;  /* User wants to return to ROM menu */
+    bool quit_requested;          /* User wants to quit */
+    bool reset_requested;         /* User wants to reset game */
+    
     /* Input remapping state */
     bool show_input_remap;   /* Show input remapping window */
     int remap_target_key;    /* Which CHIP-8 key (-1 if none) */

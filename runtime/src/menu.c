@@ -11,7 +11,10 @@
  * Menu Item Definitions
  * ========================================================================== */
 
-/* Main pause menu items */
+/* Multi-ROM mode flag */
+static bool g_multi_rom_mode = false;
+
+/* Main pause menu items (regular mode) */
 static const char* PAUSE_MENU_ITEMS[] = {
     "Resume",
     "Graphics",
@@ -23,6 +26,20 @@ static const char* PAUSE_MENU_ITEMS[] = {
     "Quit"
 };
 #define PAUSE_MENU_COUNT 8
+
+/* Main pause menu items (multi-ROM mode) */
+static const char* PAUSE_MENU_ITEMS_MULTI[] = {
+    "Resume",
+    "Graphics",
+    "Audio", 
+    "Gameplay",
+    "Quirks",
+    "Controls",
+    "Reset Game",
+    "Back to Menu",
+    "Quit"
+};
+#define PAUSE_MENU_COUNT_MULTI 9
 
 /* Graphics settings items */
 static const char* GRAPHICS_MENU_ITEMS[] = {
@@ -84,6 +101,14 @@ static char g_value_buffer[64];
  * Menu Functions
  * ========================================================================== */
 
+void chip8_menu_set_multi_rom_mode(bool enabled) {
+    g_multi_rom_mode = enabled;
+}
+
+bool chip8_menu_is_multi_rom_mode(void) {
+    return g_multi_rom_mode;
+}
+
 void chip8_menu_init(Chip8MenuState* menu, const Chip8Settings* settings) {
     memset(menu, 0, sizeof(Chip8MenuState));
     menu->screen = CHIP8_MENU_NONE;
@@ -92,6 +117,7 @@ void chip8_menu_init(Chip8MenuState* menu, const Chip8Settings* settings) {
     menu->paused = false;
     menu->reset_requested = false;
     menu->quit_requested = false;
+    menu->menu_requested = false;
     menu->settings_dirty = false;
     
     if (settings) {
@@ -104,7 +130,7 @@ void chip8_menu_init(Chip8MenuState* menu, const Chip8Settings* settings) {
 void chip8_menu_open(Chip8MenuState* menu) {
     menu->screen = CHIP8_MENU_PAUSE;
     menu->selected = 0;
-    menu->item_count = PAUSE_MENU_COUNT;
+    menu->item_count = g_multi_rom_mode ? PAUSE_MENU_COUNT_MULTI : PAUSE_MENU_COUNT;
     menu->paused = true;
 }
 
@@ -285,8 +311,19 @@ static void select_item(Chip8MenuState* menu) {
                 case 6: /* Reset */
                     enter_submenu(menu, CHIP8_MENU_CONFIRM_RESET, CONFIRM_COUNT);
                     break;
-                case 7: /* Quit */
-                    enter_submenu(menu, CHIP8_MENU_CONFIRM_QUIT, CONFIRM_COUNT);
+                case 7: /* Quit or Back to Menu */
+                    if (g_multi_rom_mode) {
+                        /* Back to Menu */
+                        enter_submenu(menu, CHIP8_MENU_CONFIRM_MENU, CONFIRM_COUNT);
+                    } else {
+                        /* Quit */
+                        enter_submenu(menu, CHIP8_MENU_CONFIRM_QUIT, CONFIRM_COUNT);
+                    }
+                    break;
+                case 8: /* Quit (multi-ROM mode only) */
+                    if (g_multi_rom_mode) {
+                        enter_submenu(menu, CHIP8_MENU_CONFIRM_QUIT, CONFIRM_COUNT);
+                    }
                     break;
             }
             break;
@@ -344,6 +381,15 @@ static void select_item(Chip8MenuState* menu) {
             }
             break;
             
+        case CHIP8_MENU_CONFIRM_MENU:
+            if (menu->selected == 0) { /* Yes */
+                menu->menu_requested = true;
+                chip8_menu_close(menu);
+            } else {
+                go_back(menu);
+            }
+            break;
+            
         default:
             break;
     }
@@ -394,6 +440,7 @@ const char* chip8_menu_get_title(const Chip8MenuState* menu) {
         case CHIP8_MENU_CONTROLS:     return "Controls";
         case CHIP8_MENU_CONFIRM_QUIT: return "Quit Game?";
         case CHIP8_MENU_CONFIRM_RESET:return "Reset Game?";
+        case CHIP8_MENU_CONFIRM_MENU: return "Return to Menu?";
         default:                       return "";
     }
 }
@@ -403,7 +450,7 @@ const char* chip8_menu_get_item_label(const Chip8MenuState* menu, int index) {
     
     switch (menu->screen) {
         case CHIP8_MENU_PAUSE:
-            return PAUSE_MENU_ITEMS[index];
+            return g_multi_rom_mode ? PAUSE_MENU_ITEMS_MULTI[index] : PAUSE_MENU_ITEMS[index];
         case CHIP8_MENU_GRAPHICS:
             return GRAPHICS_MENU_ITEMS[index];
         case CHIP8_MENU_AUDIO:
@@ -416,6 +463,7 @@ const char* chip8_menu_get_item_label(const Chip8MenuState* menu, int index) {
             return "Back";
         case CHIP8_MENU_CONFIRM_QUIT:
         case CHIP8_MENU_CONFIRM_RESET:
+        case CHIP8_MENU_CONFIRM_MENU:
             return CONFIRM_ITEMS[index];
         default:
             return NULL;

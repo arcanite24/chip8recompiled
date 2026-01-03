@@ -12,6 +12,9 @@
 #include <string.h>
 #include <math.h>
 
+/* External function from rom_selector.cpp for multi-ROM mode */
+extern void chip8_request_return_to_menu(void);
+
 /* ============================================================================
  * Gamepad State
  * ========================================================================== */
@@ -89,6 +92,10 @@ typedef struct {
     /* Configurable key bindings (copied from settings) */
     Chip8KeyBinding key_bindings[16];
 } SDLPlatformData;
+
+/* Global pointers for multi-ROM mode (exported for rom_selector.cpp) */
+SDL_Window* g_sdl_window = NULL;
+SDL_Renderer* g_sdl_renderer = NULL;
 
 /* Key repeat default settings (in microseconds) */
 #define KEY_REPEAT_DELAY_US  200000  /* 200ms before repeat starts */
@@ -501,6 +508,10 @@ static bool sdl_init(Chip8Context* ctx, const char* title, int scale) {
         return false;
     }
     
+    /* Set global pointers for multi-ROM mode */
+    g_sdl_window = data->window;
+    g_sdl_renderer = data->renderer;
+    
     /* Create texture for display */
     data->texture = SDL_CreateTexture(
         data->renderer,
@@ -669,6 +680,24 @@ static void sdl_render(Chip8Context* ctx) {
             data->overlay_state.settings_changed = false;
             /* Apply settings directly here since we have access to the data */
             sdl_apply_settings(ctx, data->settings_ref);
+        }
+        
+        /* Handle menu action requests from ImGui */
+        if (data->overlay_state.quit_requested) {
+            data->overlay_state.quit_requested = false;
+            ctx->running = false;
+        }
+        
+        if (data->overlay_state.reset_requested) {
+            data->overlay_state.reset_requested = false;
+            /* Reset will be handled by runtime */
+            chip8_context_reset(ctx);
+        }
+        
+        if (data->overlay_state.back_to_menu_requested) {
+            data->overlay_state.back_to_menu_requested = false;
+            chip8_request_return_to_menu();
+            ctx->running = false;
         }
     }
     

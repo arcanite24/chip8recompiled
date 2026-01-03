@@ -35,6 +35,7 @@ struct GeneratorOptions {
     bool emit_timing_calls = false;          // Insert timing checkpoints
     bool use_single_file = true;             // All code in one file vs. per-function
     bool single_function_mode = false;       // Put all code in one function (for complex ROMs)
+    bool use_prefixed_symbols = false;       // Use prefixed symbols for batch mode
     
     // Quirk modes (for CHIP-8 variants)
     bool quirk_shift_uses_vy = false;        // SHR/SHL use VY as source

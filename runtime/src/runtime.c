@@ -53,6 +53,10 @@ Chip8FuncPtr chip8_lookup_function(uint16_t address) {
     return NULL;
 }
 
+void chip8_clear_function_table(void) {
+    memset(g_func_table, 0, sizeof(g_func_table));
+}
+
 /* ============================================================================
  * Debug/Error Handling
  * ========================================================================== */
@@ -220,6 +224,15 @@ int chip8_run(Chip8EntryPoint entry_point, const Chip8RunConfig* config) {
             /* Check for quit request */
             if (menu.quit_requested) {
                 ctx->running = false;
+                break;
+            }
+            
+            /* Check for menu request (multi-ROM launcher) */
+            if (menu.menu_requested) {
+                ctx->running = false;
+                /* Set a flag that rom_selector.cpp can check */
+                extern void chip8_request_return_to_menu(void);
+                chip8_request_return_to_menu();
                 break;
             }
             

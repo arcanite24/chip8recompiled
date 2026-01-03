@@ -30,6 +30,7 @@ set(CHIP8RT_SOURCES
     src/settings.c
     src/menu.c
     src/imgui_overlay.cpp
+    src/rom_selector.cpp
 )
 
 # Create the runtime library

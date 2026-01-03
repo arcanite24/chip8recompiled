@@ -32,7 +32,8 @@ typedef enum Chip8MenuScreen {
     CHIP8_MENU_QUIRKS,         /* Quirk toggles */
     CHIP8_MENU_CONTROLS,       /* Control reference */
     CHIP8_MENU_CONFIRM_QUIT,   /* Quit confirmation */
-    CHIP8_MENU_CONFIRM_RESET   /* Reset confirmation */
+    CHIP8_MENU_CONFIRM_RESET,  /* Reset confirmation */
+    CHIP8_MENU_CONFIRM_MENU    /* Return to menu confirmation */
 } Chip8MenuScreen;
 
 /**
@@ -75,6 +76,9 @@ typedef struct Chip8MenuState {
     
     /** Request to quit */
     bool quit_requested;
+    
+    /** Request to return to ROM menu (multi-ROM launcher only) */
+    bool menu_requested;
 } Chip8MenuState;
 
 /* ============================================================================
@@ -88,6 +92,22 @@ typedef struct Chip8MenuState {
  * @param settings Current settings to copy
  */
 void chip8_menu_init(Chip8MenuState* menu, const Chip8Settings* settings);
+
+/**
+ * @brief Set multi-ROM mode for menu
+ * 
+ * When enabled, adds "Back to Menu" option to pause menu.
+ * 
+ * @param enabled true to enable multi-ROM mode
+ */
+void chip8_menu_set_multi_rom_mode(bool enabled);
+
+/**
+ * @brief Check if multi-ROM mode is enabled
+ * 
+ * @return true if multi-ROM mode is active
+ */
+bool chip8_menu_is_multi_rom_mode(void);
 
 /**
  * @brief Open the pause menu

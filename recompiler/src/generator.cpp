@@ -19,6 +19,28 @@ namespace chip8recomp {
 static std::string generate_instruction_code(const Instruction& instr,
                                               const GeneratorOptions& options);
 
+// Helper to generate prefixed label name
+static std::string generate_prefixed_label(uint16_t address, const std::string& prefix) {
+    std::ostringstream ss;
+    if (!prefix.empty()) {
+        ss << prefix << "_";
+    }
+    ss << "label_0x" << std::hex << std::uppercase << std::setfill('0') 
+       << std::setw(3) << address;
+    return ss.str();
+}
+
+// Helper to generate prefixed function name
+static std::string generate_prefixed_func(uint16_t address, const std::string& prefix) {
+    std::ostringstream ss;
+    if (!prefix.empty()) {
+        ss << prefix << "_";
+    }
+    ss << "func_0x" << std::hex << std::uppercase << std::setfill('0') 
+       << std::setw(3) << address;
+    return ss.str();
+}
+
 static void generate_single_function(const AnalysisResult& analysis,
                                       const uint8_t* rom_data,
                                       size_t rom_size,
@@ -67,6 +89,14 @@ GeneratedOutput generate(const AnalysisResult& analysis,
         }
     }
     
+    // Helper to get prefixed function name
+    auto get_func_name = [&](const std::string& name) {
+        if (options.use_prefixed_symbols) {
+            return options.output_prefix + "_" + name;
+        }
+        return name;
+    };
+    
     // Generate function registration (for computed jumps)
     src << "/* Register all functions for computed jump lookup */\n";
     src << "void " << options.output_prefix << "_register_functions(void) {\n";
@@ -75,7 +105,7 @@ GeneratedOutput generate(const AnalysisResult& analysis,
     } else {
         for (const auto& [addr, func] : analysis.functions) {
             src << "    chip8_register_function(0x" << std::hex << addr << ", " 
-                << func.name << ");\n";
+                << get_func_name(func.name) << ");\n";
         }
     }
     src << "}\n";
@@ -139,6 +169,13 @@ static std::string generate_instruction_code(const Instruction& instr,
                                               const GeneratorOptions& options) {
     std::ostringstream code;
     
+    // Determine prefix for symbols
+    std::string prefix = options.use_prefixed_symbols ? options.output_prefix : "";
+    
+    // Helper lambdas to generate prefixed names
+    auto label = [&prefix](uint16_t addr) { return generate_prefixed_label(addr, prefix); };
+    auto func = [&prefix](uint16_t addr) { return generate_prefixed_func(addr, prefix); };
+    
     switch (instr.type) {
         case InstructionType::CLS:
             code << "chip8_clear_screen(ctx);";
@@ -153,38 +190,38 @@ static std::string generate_instruction_code(const Instruction& instr,
             if (instr.nnn <= instr.address) {
                 code << "if (--ctx->cycles_remaining <= 0) { ctx->resume_pc = 0x" 
                      << std::hex << instr.nnn << "; ctx->should_yield = true; return; } "
-                     << "goto " << generate_label_name(instr.nnn) << ";";
+                     << "goto " << label(instr.nnn) << ";";
             } else {
-                code << "goto " << generate_label_name(instr.nnn) << ";";
+                code << "goto " << label(instr.nnn) << ";";
             }
             break;
             
         case InstructionType::CALL:
-            code << generate_function_name(instr.nnn) << "(ctx);";
+            code << func(instr.nnn) << "(ctx);";
             break;
             
         case InstructionType::SE_VX_NN:
             code << "if (ctx->V[0x" << std::hex << (int)instr.x << "] == 0x" 
                  << (int)instr.nn << ") goto " 
-                 << generate_label_name(instr.address + 4) << ";";
+                 << label(instr.address + 4) << ";";
             break;
             
         case InstructionType::SNE_VX_NN:
             code << "if (ctx->V[0x" << std::hex << (int)instr.x << "] != 0x" 
                  << (int)instr.nn << ") goto " 
-                 << generate_label_name(instr.address + 4) << ";";
+                 << label(instr.address + 4) << ";";
             break;
             
         case InstructionType::SE_VX_VY:
             code << "if (ctx->V[0x" << std::hex << (int)instr.x << "] == ctx->V[0x" 
                  << (int)instr.y << "]) goto " 
-                 << generate_label_name(instr.address + 4) << ";";
+                 << label(instr.address + 4) << ";";
             break;
             
         case InstructionType::SNE_VX_VY:
             code << "if (ctx->V[0x" << std::hex << (int)instr.x << "] != ctx->V[0x" 
                  << (int)instr.y << "]) goto " 
-                 << generate_label_name(instr.address + 4) << ";";
+                 << label(instr.address + 4) << ";";
             break;
             
         case InstructionType::LD_VX_NN:
@@ -281,13 +318,13 @@ static std::string generate_instruction_code(const Instruction& instr,
         case InstructionType::SKP:
             code << "if (chip8_key_pressed(ctx, ctx->V[0x" << std::hex 
                  << (int)instr.x << "])) goto " 
-                 << generate_label_name(instr.address + 4) << ";";
+                 << label(instr.address + 4) << ";";
             break;
             
         case InstructionType::SKNP:
             code << "if (!chip8_key_pressed(ctx, ctx->V[0x" << std::hex 
                  << (int)instr.x << "])) goto " 
-                 << generate_label_name(instr.address + 4) << ";";
+                 << label(instr.address + 4) << ";";
             break;
             
         case InstructionType::LD_VX_DT:
@@ -347,9 +384,13 @@ void generate_block(const BasicBlock& block,
                     const AnalysisResult& analysis,
                     const GeneratorOptions& options,
                     std::ostream& out) {
+    // Determine prefix for symbols
+    std::string prefix = options.use_prefixed_symbols ? options.output_prefix : "";
+    auto label = [&prefix](uint16_t addr) { return generate_prefixed_label(addr, prefix); };
+    
     // Emit label if needed
     if (analysis.label_addresses.count(block.start_address)) {
-        out << generate_label_name(block.start_address) << ":\n";
+        out << label(block.start_address) << ":\n";
     }
     
     // Emit each instruction
@@ -359,7 +400,7 @@ void generate_block(const BasicBlock& block,
         // Check if we need an internal label
         if (block.internal_labels.count(instr.address) && 
             instr.address != block.start_address) {
-            out << generate_label_name(instr.address) << ":\n";
+            out << label(instr.address) << ":\n";
         }
         
         generate_instruction(instr, options, out);
@@ -370,7 +411,16 @@ void generate_function(const Function& func,
                        const AnalysisResult& analysis,
                        const GeneratorOptions& options,
                        std::ostream& out) {
-    out << "void " << func.name << "(Chip8Context* ctx) {\n";
+    // Determine prefix for symbols
+    std::string prefix = options.use_prefixed_symbols ? options.output_prefix : "";
+    auto label = [&prefix](uint16_t addr) { return generate_prefixed_label(addr, prefix); };
+    
+    // Get prefixed function name
+    std::string func_name = options.use_prefixed_symbols 
+        ? options.output_prefix + "_" + func.name 
+        : func.name;
+    
+    out << "void " << func_name << "(Chip8Context* ctx) {\n";
     
     // Collect all backward jump targets within THIS function
     std::set<uint16_t> backward_jump_targets;
@@ -407,7 +457,7 @@ void generate_function(const Function& func,
         out << "        ctx->should_yield = false;\n";
         for (uint16_t target : backward_jump_targets) {
             out << "        if (ctx->resume_pc == 0x" << std::hex << target << ") goto " 
-                << generate_label_name(target) << ";\n";
+                << label(target) << ";\n";
         }
         out << "    }\n\n";
     }
@@ -434,6 +484,10 @@ void generate_single_function(const AnalysisResult& analysis,
     out << "void " << options.output_prefix << "_main(Chip8Context* ctx) {\n";
     
     const uint16_t base_address = 0x200;
+    
+    // Determine prefix for symbols
+    std::string prefix = options.use_prefixed_symbols ? options.output_prefix : "";
+    auto label = [&prefix](uint16_t addr) { return generate_prefixed_label(addr, prefix); };
     
     // Helper lambda to decode an instruction at any address (even or odd)
     auto decode_at = [&](uint16_t addr) -> Instruction {
@@ -525,6 +579,7 @@ void generate_single_function(const AnalysisResult& analysis,
     std::set<uint16_t> backward_jump_targets;
     std::set<uint16_t> return_addresses;
     std::set<uint16_t> needed_labels;
+    std::map<uint16_t, std::set<uint16_t>> computed_jump_targets; // base_addr -> possible targets
     
     for (const auto& [addr, instr] : decoded_instrs) {
         // Backward jump targets need yield support
@@ -535,6 +590,18 @@ void generate_single_function(const AnalysisResult& analysis,
         // Collect return addresses for CALL dispatch
         if (instr.type == InstructionType::CALL) {
             return_addresses.insert(addr + 2);
+        }
+        
+        // Collect computed jump targets for JP_V0 dispatch
+        if (instr.type == InstructionType::JP_V0) {
+            // Generate possible targets (V0 can be 0-255, but typically small range)
+            for (uint16_t offset = 0; offset < 64; offset += 2) {
+                uint16_t target = instr.nnn + offset;
+                if (reachable.count(target) || decoded_instrs.count(target)) {
+                    computed_jump_targets[instr.nnn].insert(target);
+                    needed_labels.insert(target);
+                }
+            }
         }
         
         // Collect all needed labels
@@ -569,7 +636,7 @@ void generate_single_function(const AnalysisResult& analysis,
         out << "        ctx->should_yield = false;\n";
         for (uint16_t target : backward_jump_targets) {
             out << "        if (ctx->resume_pc == 0x" << std::hex << target << ") goto " 
-                << generate_label_name(target) << ";\n";
+                << label(target) << ";\n";
         }
         out << "    }\n\n";
     }
@@ -585,16 +652,16 @@ void generate_single_function(const AnalysisResult& analysis,
         
         // Emit label if needed
         if (needed_labels.count(addr) && !emitted_labels.count(addr)) {
-            out << generate_label_name(addr) << ":\n";
+            out << label(addr) << ":\n";
             emitted_labels.insert(addr);
         }
         
-        // Special handling for CALL and RET in single-function mode
+        // Special handling for CALL, RET, and JP_V0 in single-function mode
         if (instr.type == InstructionType::CALL) {
             out << "    /* CALL 0x" << std::hex << instr.nnn << " at 0x" 
                 << addr << " */\n";
             out << "    ctx->stack[ctx->SP++] = 0x" << std::hex << (addr + 2) << ";\n";
-            out << "    goto " << generate_label_name(instr.nnn) << ";\n";
+            out << "    goto " << label(instr.nnn) << ";\n";
         } else if (instr.type == InstructionType::RET) {
             out << "    /* RET - dispatch based on return address */\n";
             out << "    {\n";
@@ -602,9 +669,24 @@ void generate_single_function(const AnalysisResult& analysis,
             out << "        switch (ret_addr) {\n";
             for (uint16_t ret_addr : return_addresses) {
                 out << "            case 0x" << std::hex << ret_addr << ": goto " 
-                    << generate_label_name(ret_addr) << ";\n";
+                    << label(ret_addr) << ";\n";
             }
             out << "            default: return; /* Unknown return address */\n";
+            out << "        }\n";
+            out << "    }\n";
+        } else if (instr.type == InstructionType::JP_V0) {
+            // Computed jump - dispatch based on V0 + base
+            out << "    /* JP V0, 0x" << std::hex << instr.nnn << " - computed jump */\n";
+            out << "    {\n";
+            out << "        uint16_t target = 0x" << std::hex << instr.nnn << " + ctx->V[0];\n";
+            out << "        switch (target) {\n";
+            if (computed_jump_targets.count(instr.nnn)) {
+                for (uint16_t target : computed_jump_targets[instr.nnn]) {
+                    out << "            case 0x" << std::hex << target << ": goto " 
+                        << label(target) << ";\n";
+                }
+            }
+            out << "            default: chip8_panic(\"Invalid computed jump target\", target); return;\n";
             out << "        }\n";
             out << "    }\n";
         } else {
@@ -644,7 +726,10 @@ std::string generate_header(const AnalysisResult& analysis,
         hdr << "void " << options.output_prefix << "_main(Chip8Context* ctx);\n";
     } else {
         for (const auto& [addr, func] : analysis.functions) {
-            hdr << "void " << func.name << "(Chip8Context* ctx);\n";
+            std::string func_name = options.use_prefixed_symbols 
+                ? options.output_prefix + "_" + func.name 
+                : func.name;
+            hdr << "void " << func_name << "(Chip8Context* ctx);\n";
         }
     }
     hdr << "\n";
@@ -657,8 +742,11 @@ std::string generate_header(const AnalysisResult& analysis,
         hdr << "#define " << options.output_prefix << "_entry " 
             << options.output_prefix << "_main\n\n";
     } else {
+        std::string entry_name = options.use_prefixed_symbols 
+            ? generate_prefixed_func(analysis.entry_point, options.output_prefix)
+            : generate_function_name(analysis.entry_point);
         hdr << "#define " << options.output_prefix << "_entry " 
-            << generate_function_name(analysis.entry_point) << "\n\n";
+            << entry_name << "\n\n";
     }
     
     hdr << "#ifdef __cplusplus\n";
@@ -727,7 +815,7 @@ std::string generate_main(const GeneratorOptions& options) {
     main << "    /* Run configuration */\n";
     main << "    Chip8RunConfig config = CHIP8_RUN_CONFIG_DEFAULT;\n";
     main << "    config.title = \"" << options.output_prefix << "\";\n";
-    main << "    config.scale = 10;\n";
+    main << "    config.scale = 20;\n";
     main << "    config.cpu_freq_hz = 300;  /* Reasonable speed for most games */\n";
     
     if (options.embed_rom_data) {
@@ -851,6 +939,8 @@ std::string generate_rom_data(const uint8_t* rom_data,
                                const GeneratorOptions& options) {
     std::ostringstream out;
     
+    std::string prefix = options.use_prefixed_symbols ? options.output_prefix + "_" : "";
+    
     out << "/**\n";
     out << " * @file rom_data.c\n";
     out << " * @brief Embedded ROM data for " << options.output_prefix << "\n";
@@ -861,7 +951,7 @@ std::string generate_rom_data(const uint8_t* rom_data,
     out << "#include <stdint.h>\n";
     out << "#include <stddef.h>\n\n";
     
-    out << "const uint8_t rom_data[] = {\n";
+    out << "const uint8_t " << prefix << "rom_data[] = {\n";
     
     for (size_t i = 0; i < rom_size; ++i) {
         if (i % 16 == 0) {
@@ -882,7 +972,7 @@ std::string generate_rom_data(const uint8_t* rom_data,
     
     out << "};\n\n";
     
-    out << "const size_t rom_data_size = " << std::dec << rom_size << ";\n";
+    out << "const size_t " << prefix << "rom_data_size = " << std::dec << rom_size << ";\n";
     
     return out.str();
 }

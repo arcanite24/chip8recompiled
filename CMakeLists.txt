@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 project(chip8-recompiled 
-    VERSION 0.1.0 
+    VERSION 0.8.0 
     LANGUAGES C CXX
     DESCRIPTION "Static recompiler for CHIP-8 ROMs"
 )

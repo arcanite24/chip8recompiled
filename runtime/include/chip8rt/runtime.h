@@ -100,6 +100,14 @@ void chip8_register_function(uint16_t address, Chip8FuncPtr func);
 Chip8FuncPtr chip8_lookup_function(uint16_t address);
 
 /**
+ * @brief Clear the function lookup table
+ * 
+ * Zeros out all registered functions. Used when switching between
+ * ROMs in a multi-ROM launcher.
+ */
+void chip8_clear_function_table(void);
+
+/**
  * @brief Macro for computed jump (BNNN)
  * 
  * Looks up and calls a function based on computed address.

@@ -145,7 +145,7 @@ Chip8Settings chip8_settings_default(void) {
     Chip8Settings settings = {
         .graphics = {
             .window_size = CHIP8_WINDOW_10X,
-            .scale = 10,
+            .scale = 20,
             .fullscreen = false,
             .theme = CHIP8_THEME_CLASSIC,
             .custom_fg = {255, 255, 255, 255},

@@ -1,5 +1,8 @@
 # CHIP-8 Recompiled
 
+[![Version](https://img.shields.io/badge/version-0.8.0-blue.svg)](https://github.com/arcanite24/chip8recompiled/releases)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+
 A static recompilation toolchain for CHIP-8 ROMs that transforms bytecode into native executables.
 
 ## Overview
@@ -55,7 +58,7 @@ cmake -G Ninja ..
 cmake --build .
 ```
 
-### Recompiling a ROM
+### Recompiling a Single ROM
 
 ```bash
 # Standard recompilation (works for most ROMs)
@@ -71,6 +74,30 @@ cmake -G Ninja ..
 cmake --build .
 ./pong
 ```
+
+### Batch Compilation (Multi-ROM Launcher)
+
+Compile an entire ROM collection into a single native launcher:
+
+```bash
+# Compile all ROMs from chip8Archive into a launcher
+./recompiler/chip8recomp --batch ../chip8Archive/roms -o game_collection
+
+# Build the launcher
+cd game_collection
+mkdir build && cd build
+cmake -G Ninja ..
+cmake --build .
+
+# Run the multi-ROM launcher (75+ games!)
+./chip8_launcher
+```
+
+The launcher features:
+- **ROM Selection Menu** - Navigate with arrow keys, Enter to launch
+- **In-Game Pause Menu** - Press ESC during gameplay  
+- **Back to Menu** - Return to ROM selector from pause menu
+- **Per-ROM Settings** - CPU speed, quirks saved per game
 
 ### Controls
 
@@ -218,12 +245,25 @@ This tests all ROMs in the `roms/` directory and generates `COMPATIBILITY_REPORT
 | Linux    | ✅ Should Work (SDL2) |
 | Windows  | 🔄 Planned |
 
-### New in v0.3.0: In-Game Settings Menu
+## Changelog
+
+### v0.8.0 - Multi-ROM Launcher
+
+- ✅ **Batch Compilation** - Compile entire ROM directories into a single launcher
+- ✅ **chip8Archive Integration** - Works with [JohnEarnest/chip8Archive](https://github.com/JohnEarnest/chip8Archive)
+- ✅ **ROM Selection UI** - ImGui-based menu with keyboard/mouse navigation
+- ✅ **Back to Menu** - Return to ROM selector from in-game pause menu
+- ✅ **Auto Mode** - Automatic single-function mode for batch reliability
+- ✅ **Prefixed Symbols** - Symbol isolation for multi-ROM builds
+- ✅ **20x Default Scale** - Larger default window size
+- ✅ **Computed Jump Support** - JP V0,addr (BNNN) in single-function mode
+
+### v0.3.0 - In-Game Settings Menu
 
 Press **ESC** during gameplay to open the pause menu:
 
 | Feature | Options |
-|---------|---------|
+|---------|--------|
 | **Graphics** | Scale (1-20x), Fullscreen, Color Themes, Pixel Grid |
 | **Audio** | Volume, Frequency (220-880Hz), Waveform, Mute |
 | **Gameplay** | CPU Speed, Key Repeat, Quirk Toggles |
@@ -231,11 +271,10 @@ Press **ESC** during gameplay to open the pause menu:
 
 ### Upcoming Improvements
 
-- [ ] **chip8Archive Support** - Integrate ROMs from [JohnEarnest/chip8Archive](https://github.com/JohnEarnest/chip8Archive)
 - [ ] **Prebuilt Binaries** - Publish compiled recompiler for macOS, Linux, Windows
 - [ ] **WebAssembly Target** - Run recompiled ROMs in the browser
 - [ ] **Android Target** - Mobile support with touch controls
-- [ ] **Expanded ROM Testing** - Hi-res ROMs, parallel builds
+- [ ] **SCHIP/XO-CHIP Support** - Extended instruction sets
 - [ ] **Compiler Optimizations** - LTO, `-O3`, computed goto
 
 ## License

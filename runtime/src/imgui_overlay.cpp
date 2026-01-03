@@ -6,6 +6,7 @@
 #include "chip8rt/imgui_overlay.h"
 #include "chip8rt/runtime.h"
 #include "chip8rt/settings.h"
+#include "chip8rt/menu.h"
 
 #include "imgui.h"
 #include "imgui_impl_sdl2.h"
@@ -666,6 +667,42 @@ static void render_settings_window(Chip8Settings* settings, Chip8OverlayState* s
             ImGui::Checkbox("Show Debug Window", &state->show_debug);
             ImGui::Checkbox("Show ImGui Demo", &state->show_demo);
         }
+        
+        /* Game Control Buttons */
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+        
+        /* Resume button */
+        if (ImGui::Button("Resume", ImVec2(-1, 30))) {
+            state->show_settings = false;
+        }
+        
+        /* Reset button */
+        if (ImGui::Button("Reset Game", ImVec2(-1, 30))) {
+            state->reset_requested = true;
+            state->show_settings = false;
+        }
+        
+        /* Back to Menu button (only in multi-ROM mode) */
+        if (chip8_menu_is_multi_rom_mode()) {
+            ImGui::Spacing();
+            if (ImGui::Button("Back to Menu", ImVec2(-1, 30))) {
+                state->back_to_menu_requested = true;
+                state->show_settings = false;
+            }
+        }
+        
+        ImGui::Spacing();
+        
+        /* Quit button */
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.6f, 0.2f, 0.2f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.8f, 0.3f, 0.3f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.9f, 0.2f, 0.2f, 1.0f));
+        if (ImGui::Button("Quit", ImVec2(-1, 30))) {
+            state->quit_requested = true;
+        }
+        ImGui::PopStyleColor(3);
         
         /* Mark settings as changed so platform can apply them */
         if (changed) {

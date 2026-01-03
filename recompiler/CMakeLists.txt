@@ -13,6 +13,7 @@ set(CHIP8RECOMP_SOURCES
     src/generator.cpp
     src/config.cpp
     src/rom.cpp
+    src/batch.cpp
 )
 
 # Create the recompiler executable
